@@ -1,0 +1,950 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TradeQuote AI</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #22263a;
+    --accent: #f97316;
+    --accent2: #fb923c;
+    --text: #f1f5f9;
+    --muted: #94a3b8;
+    --border: #2e3347;
+    --green: #22c55e;
+    --red: #ef4444;
+    --yellow: #eab308;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+    padding: 24px 16px 48px;
+  }
+
+  header {
+    text-align: center;
+    margin-bottom: 28px;
+  }
+
+  .logo {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 6px;
+  }
+
+  .logo-icon {
+    width: 40px; height: 40px;
+    background: var(--accent);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px;
+  }
+
+  .logo-text { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }
+  .logo-text span { color: var(--accent); }
+  .tagline { color: var(--muted); font-size: 13px; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 22px;
+    margin-bottom: 14px;
+    max-width: 660px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .section-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1.8px;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 14px;
+  }
+
+  /* Step indicator */
+  .steps {
+    display: flex;
+    justify-content: center;
+    gap: 0;
+    margin-bottom: 24px;
+    max-width: 660px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .step {
+    flex: 1;
+    text-align: center;
+    position: relative;
+  }
+
+  .step::after {
+    content: '';
+    position: absolute;
+    top: 14px;
+    left: 50%;
+    width: 100%;
+    height: 2px;
+    background: var(--border);
+  }
+
+  .step:last-child::after { display: none; }
+
+  .step-dot {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: var(--surface2);
+    border: 2px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 6px;
+    font-size: 11px;
+    font-weight: 700;
+    position: relative;
+    z-index: 1;
+  }
+
+  .step.active .step-dot { background: var(--accent); border-color: var(--accent); color: white; }
+  .step.done .step-dot { background: var(--green); border-color: var(--green); color: white; }
+  .step.done::after { background: var(--green); }
+
+  .step-label { font-size: 10px; color: var(--muted); }
+  .step.active .step-label { color: var(--accent); font-weight: 600; }
+  .step.done .step-label { color: var(--green); }
+
+  /* Record */
+  .record-area {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    padding: 8px 0 4px;
+  }
+
+  #recordBtn {
+    width: 76px; height: 76px;
+    border-radius: 50%;
+    border: 3px solid var(--accent);
+    background: transparent;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 30px;
+    transition: all 0.2s;
+  }
+
+  #recordBtn:hover { background: rgba(249,115,22,0.1); transform: scale(1.05); }
+  #recordBtn.recording { border-color: var(--red); animation: pulse 1.2s infinite; }
+  #recordBtn.recording .mic-icon { display: none; }
+  #recordBtn.recording .stop-icon { display: flex; }
+  .stop-icon { display: none; width: 26px; height: 26px; background: var(--red); border-radius: 6px; }
+
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.4); }
+    50% { box-shadow: 0 0 0 14px rgba(239,68,68,0); }
+  }
+
+  #recordStatus { font-size: 13px; color: var(--muted); }
+  #recordStatus.active { color: var(--red); font-weight: 600; }
+
+  .or-divider {
+    text-align: center;
+    color: var(--muted);
+    font-size: 11px;
+    margin: 10px 0;
+    position: relative;
+  }
+  .or-divider::before, .or-divider::after {
+    content: '';
+    position: absolute;
+    top: 50%; width: 43%; height: 1px;
+    background: var(--border);
+  }
+  .or-divider::before { left: 0; }
+  .or-divider::after { right: 0; }
+
+  textarea {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--text);
+    width: 100%;
+    resize: vertical;
+    outline: none;
+    font-family: 'Inter', sans-serif;
+    transition: border-color 0.2s;
+  }
+  textarea:focus { border-color: var(--accent); }
+  textarea::placeholder { color: var(--muted); }
+
+  .tip { font-size: 11px; color: var(--muted); text-align: center; margin-top: 8px; }
+
+  /* Buttons */
+  .btn-primary {
+    width: 100%;
+    padding: 13px;
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+  }
+  .btn-primary:hover { background: var(--accent2); transform: translateY(-1px); }
+  .btn-primary:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+
+  .btn-secondary {
+    flex: 1;
+    padding: 11px;
+    background: var(--surface2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* Schema preview */
+  .schema-grid {
+    display: grid;
+    gap: 10px;
+  }
+
+  .schema-field {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+  }
+
+  .schema-field label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    color: var(--muted);
+    display: block;
+    margin-bottom: 6px;
+  }
+
+  .schema-field input, .schema-field textarea {
+    background: transparent;
+    border: none;
+    padding: 0;
+    font-size: 13px;
+    color: var(--text);
+    width: 100%;
+    font-family: 'Inter', sans-serif;
+    resize: none;
+    outline: none;
+  }
+
+  .tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .tag {
+    background: rgba(249,115,22,0.15);
+    color: var(--accent);
+    border: 1px solid rgba(249,115,22,0.3);
+    border-radius: 20px;
+    padding: 3px 10px;
+    font-size: 12px;
+    display: flex; align-items: center; gap: 5px;
+  }
+
+  .tag.red {
+    background: rgba(239,68,68,0.1);
+    color: var(--red);
+    border-color: rgba(239,68,68,0.3);
+  }
+
+  .tag.yellow {
+    background: rgba(234,179,8,0.1);
+    color: var(--yellow);
+    border-color: rgba(234,179,8,0.3);
+  }
+
+  .tag .remove {
+    cursor: pointer;
+    opacity: 0.6;
+    font-size: 14px;
+    line-height: 1;
+  }
+  .tag .remove:hover { opacity: 1; }
+
+  .tag-input-row {
+    display: flex;
+    gap: 6px;
+    margin-top: 6px;
+  }
+
+  .tag-input-row input {
+    flex: 1;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-size: 12px;
+    color: var(--text);
+    outline: none;
+  }
+
+  .tag-input-row button {
+    background: var(--accent);
+    border: none;
+    border-radius: 6px;
+    color: white;
+    padding: 5px 10px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  .confidence-bar {
+    height: 6px;
+    background: var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-top: 6px;
+  }
+
+  .confidence-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.6s ease;
+  }
+
+  .schema-two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  /* Quote */
+  .quote-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .business-name { font-size: 20px; font-weight: 700; color: var(--accent); }
+  .quote-meta { text-align: right; font-size: 12px; color: var(--muted); line-height: 1.7; }
+  .quote-number { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--accent); }
+
+  .customer-block {
+    background: var(--surface2);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 18px;
+    font-size: 13px;
+    line-height: 1.8;
+  }
+  .customer-block strong { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: 1px; display: block; margin-bottom: 4px; }
+
+  .items-table { width: 100%; border-collapse: collapse; margin-bottom: 14px; font-size: 13px; }
+  .items-table th {
+    text-align: left; padding: 8px 10px;
+    color: var(--muted); font-size: 10px;
+    text-transform: uppercase; letter-spacing: 1px;
+    border-bottom: 1px solid var(--border);
+  }
+  .items-table th:last-child, .items-table td:last-child { text-align: right; }
+  .items-table td { padding: 10px; border-bottom: 1px solid var(--border); line-height: 1.4; }
+  .items-table tr:last-child td { border-bottom: none; }
+
+  .totals { border-top: 1px solid var(--border); padding-top: 12px; font-size: 13px; }
+  .total-row { display: flex; justify-content: space-between; padding: 4px 0; color: var(--muted); }
+  .total-row.grand { color: var(--text); font-size: 16px; font-weight: 700; padding-top: 10px; margin-top: 6px; border-top: 1px solid var(--border); }
+
+  .notes-block {
+    margin-top: 16px; padding: 12px 14px;
+    background: var(--surface2); border-radius: 8px;
+    font-size: 13px; line-height: 1.7; color: var(--muted);
+  }
+  .notes-block strong { color: var(--text); display: block; margin-bottom: 4px; }
+
+  .validity { margin-top: 12px; font-size: 11px; color: var(--muted); text-align: center; }
+
+  .action-row { display: flex; gap: 10px; margin-top: 16px; }
+
+  .loading-dots span { animation: blink 1.2s infinite; font-size: 18px; }
+  .loading-dots span:nth-child(2) { animation-delay: 0.2s; }
+  .loading-dots span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes blink { 0%, 80%, 100% { opacity: 0.2; } 40% { opacity: 1; } }
+
+  .error-msg { color: var(--red); font-size: 13px; text-align: center; padding: 8px; display: none; }
+
+  .hidden { display: none !important; }
+
+  @media (max-width: 480px) {
+    .schema-two-col { grid-template-columns: 1fr; }
+    .action-row { flex-wrap: wrap; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">🔧</div>
+    <div class="logo-text">Trade<span>Quote</span> AI</div>
+  </div>
+  <p class="tagline">Speak the job. Get a professional quote.</p>
+</header>
+
+<!-- Step indicator -->
+<div class="steps" id="stepIndicator">
+  <div class="step active" id="step1ind">
+    <div class="step-dot">1</div>
+    <div class="step-label">Describe</div>
+  </div>
+  <div class="step" id="step2ind">
+    <div class="step-dot">2</div>
+    <div class="step-label">Review</div>
+  </div>
+  <div class="step" id="step3ind">
+    <div class="step-dot">3</div>
+    <div class="step-label">Quote</div>
+  </div>
+</div>
+
+<!-- STEP 1: Record / Type -->
+<div class="card" id="step1">
+  <div class="section-label">Step 1 — Describe the Job</div>
+  <div class="record-area">
+    <button id="recordBtn" title="Tap to record">
+      <span class="mic-icon">🎙️</span>
+      <span class="stop-icon"></span>
+    </button>
+    <div id="recordStatus">Tap to record a voice note</div>
+  </div>
+  <div class="or-divider">or type it below</div>
+  <textarea id="transcriptBox" rows="4" placeholder='e.g. "Fit a new consumer unit, replace 3 sockets, 6 hours labour, parts around £180, customer is John Smith, 14 High Street Wigan"'></textarea>
+  <p class="tip">Include trade type, tasks, hours, parts cost, customer name & address for best results.</p>
+  <br>
+  <button class="btn-primary" id="extractBtn">🔍 Extract Job Details</button>
+  <div class="error-msg" id="errorMsg1">Could not extract details. Please try again or add more information.</div>
+</div>
+
+<!-- STEP 2: Schema Review -->
+<div class="card hidden" id="step2">
+  <div class="section-label">Step 2 — Review &amp; Edit Extracted Details</div>
+  <p style="font-size:13px;color:var(--muted);margin-bottom:16px;">The AI has extracted these details from your description. Check everything looks right — you can edit any field before generating the quote.</p>
+
+  <div class="schema-grid">
+
+    <div class="schema-two-col">
+      <div class="schema-field">
+        <label>Trade Type</label>
+        <input type="text" id="s_trade_type" placeholder="e.g. Electrician">
+      </div>
+      <div class="schema-field">
+        <label>Urgency</label>
+        <input type="text" id="s_urgency" placeholder="e.g. Standard, Urgent">
+      </div>
+    </div>
+
+    <div class="schema-field">
+      <label>Job Summary</label>
+      <textarea id="s_job_summary" rows="2"></textarea>
+    </div>
+
+    <div class="schema-two-col">
+      <div class="schema-field">
+        <label>Labour Estimate (hours)</label>
+        <input type="number" id="s_labour_hours" min="0" step="0.5" placeholder="e.g. 4">
+      </div>
+      <div class="schema-field">
+        <label>Location</label>
+        <input type="text" id="s_location" placeholder="e.g. Manchester">
+      </div>
+    </div>
+
+    <div class="schema-field">
+      <label>Tasks</label>
+      <div class="tags" id="s_tasks_tags"></div>
+      <div class="tag-input-row">
+        <input type="text" id="s_tasks_input" placeholder="Add a task...">
+        <button onclick="addTag('tasks')">+ Add</button>
+      </div>
+    </div>
+
+    <div class="schema-field">
+      <label>Materials Needed</label>
+      <div class="tags" id="s_materials_tags"></div>
+      <div class="tag-input-row">
+        <input type="text" id="s_materials_input" placeholder="Add a material...">
+        <button onclick="addTag('materials')">+ Add</button>
+      </div>
+    </div>
+
+    <div class="schema-field">
+      <label>Assumptions Made</label>
+      <div class="tags" id="s_assumptions_tags"></div>
+      <div class="tag-input-row">
+        <input type="text" id="s_assumptions_input" placeholder="Add an assumption...">
+        <button onclick="addTag('assumptions')">+ Add</button>
+      </div>
+    </div>
+
+    <div class="schema-field">
+      <label>Missing Information <span style="color:var(--red);font-size:10px">(flagged by AI)</span></label>
+      <div class="tags" id="s_missing_tags"></div>
+    </div>
+
+    <div class="schema-field">
+      <label>AI Confidence Score</label>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:2px">
+        <div class="confidence-bar" style="flex:1">
+          <div class="confidence-fill" id="confidenceFill"></div>
+        </div>
+        <span id="confidenceLabel" style="font-size:13px;font-weight:600;min-width:36px;text-align:right"></span>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:6px" id="confidenceNote"></div>
+    </div>
+
+  </div>
+
+  <br>
+  <div style="display:flex;gap:10px">
+    <button class="btn-secondary" onclick="goBack()">← Back</button>
+    <button class="btn-primary" id="generateBtn" style="flex:2">📄 Generate Quote</button>
+  </div>
+  <div class="error-msg" id="errorMsg2">Could not generate quote. Please check the details and try again.</div>
+</div>
+
+<!-- STEP 3: Quote Output -->
+<div class="card hidden" id="step3">
+  <div class="section-label">Your Professional Quote</div>
+  <div id="quoteContent"></div>
+  <div class="action-row">
+    <button class="btn-secondary" onclick="copyQuote()">📋 Copy</button>
+    <button class="btn-secondary" onclick="window.print()">🖨️ Print</button>
+    <button class="btn-secondary" onclick="resetAll()">🔄 New Quote</button>
+  </div>
+</div>
+
+<script>
+  // ─── Step management ───────────────────────────────────────────
+  function setStep(n) {
+    ['step1','step2','step3'].forEach((id,i) => {
+      document.getElementById(id).classList.toggle('hidden', i !== n-1);
+      const ind = document.getElementById('step'+(i+1)+'ind');
+      ind.className = 'step' + (i+1 < n ? ' done' : i+1 === n ? ' active' : '');
+    });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function goBack() { setStep(1); }
+
+  // ─── Voice recording ────────────────────────────────────────────
+  const recordBtn = document.getElementById('recordBtn');
+  const recordStatus = document.getElementById('recordStatus');
+  const transcriptBox = document.getElementById('transcriptBox');
+  let recognition = null;
+  let isRecording = false;
+  let finalTranscript = '';
+
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+  if (!SpeechRecognition) {
+    recordBtn.disabled = true;
+    recordStatus.textContent = 'Voice not supported — please type below.';
+  } else {
+    recordBtn.addEventListener('click', () => {
+      if (!isRecording) {
+        finalTranscript = '';
+        recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = 'en-GB';
+
+        recognition.onstart = () => {
+          isRecording = true;
+          recordBtn.classList.add('recording');
+          recordStatus.textContent = '● Recording... tap to stop';
+          recordStatus.className = 'active';
+        };
+
+        recognition.onresult = (e) => {
+          let interim = '';
+          for (let i = e.resultIndex; i < e.results.length; i++) {
+            if (e.results[i].isFinal) {
+              finalTranscript += e.results[i][0].transcript + ' ';
+            } else {
+              interim += e.results[i][0].transcript;
+            }
+          }
+          transcriptBox.value = (finalTranscript + interim).trim();
+        };
+
+        recognition.onerror = (e) => {
+          if (e.error === 'no-speech') return;
+          isRecording = false;
+          recordBtn.classList.remove('recording');
+          recordStatus.textContent = e.error === 'not-allowed'
+            ? 'Microphone blocked — type below.'
+            : 'Error: ' + e.error + ' — type below.';
+          recordStatus.className = '';
+        };
+
+        recognition.onend = () => {
+          if (isRecording) recognition.start();
+        };
+
+        try { recognition.start(); }
+        catch(err) { recordStatus.textContent = 'Could not start mic — type below.'; }
+
+      } else {
+        isRecording = false;
+        recognition.onend = null;
+        recognition.stop();
+        recordBtn.classList.remove('recording');
+        recordStatus.textContent = transcriptBox.value
+          ? '✅ Done — edit if needed, then extract details.'
+          : 'Stopped. Type your description below.';
+        recordStatus.className = '';
+      }
+    });
+  }
+
+  // ─── Tag helpers ────────────────────────────────────────────────
+  const tagData = { tasks: [], materials: [], assumptions: [], missing: [] };
+
+  function renderTags(type) {
+    const container = document.getElementById('s_' + type + '_tags');
+    if (!container) return;
+    container.innerHTML = '';
+    tagData[type].forEach((val, i) => {
+      const cls = type === 'missing' ? 'tag red' : type === 'assumptions' ? 'tag yellow' : 'tag';
+      const removeBtn = type === 'missing' ? '' : `<span class="remove" onclick="removeTag('${type}',${i})">×</span>`;
+      const div = document.createElement('div');
+      div.className = cls;
+      div.innerHTML = val + removeBtn;
+      container.appendChild(div);
+    });
+  }
+
+  function addTag(type) {
+    const input = document.getElementById('s_' + type + '_input');
+    const val = input.value.trim();
+    if (!val) return;
+    tagData[type].push(val);
+    renderTags(type);
+    input.value = '';
+  }
+
+  function removeTag(type, index) {
+    tagData[type].splice(index, 1);
+    renderTags(type);
+  }
+
+  // Allow Enter key to add tags
+  ['tasks','materials','assumptions'].forEach(type => {
+    const input = document.getElementById('s_' + type + '_input');
+    if (input) input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addTag(type); } });
+  });
+
+  // ─── Step 1 → Step 2: Extract ───────────────────────────────────
+  document.getElementById('extractBtn').addEventListener('click', async () => {
+    const description = transcriptBox.value.trim();
+    if (!description) {
+      alert('Please describe the job first — by voice or typing.');
+      return;
+    }
+
+    const btn = document.getElementById('extractBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<div class="loading-dots"><span>●</span><span>●</span><span>●</span></div>';
+    document.getElementById('errorMsg1').style.display = 'none';
+
+    const schema = parseJobDescription(description);
+    populateSchema(schema);
+    setStep(2);
+
+    btn.disabled = false;
+    btn.innerHTML = '🔍 Extract Job Details';
+  });
+
+  function populateSchema(s) {
+    document.getElementById('s_trade_type').value = s.trade_type || '';
+    document.getElementById('s_job_summary').value = s.job_summary || '';
+    document.getElementById('s_labour_hours').value = s.labour_estimate_hours || '';
+    document.getElementById('s_urgency').value = s.urgency || 'Standard';
+    document.getElementById('s_location').value = s.location || '';
+
+    tagData.tasks = s.tasks || [];
+    tagData.materials = s.materials_needed || [];
+    tagData.assumptions = s.assumptions || [];
+    tagData.missing = s.missing_information || [];
+
+    renderTags('tasks');
+    renderTags('materials');
+    renderTags('assumptions');
+    renderTags('missing');
+
+    const score = s.confidence_score || 0;
+    const fill = document.getElementById('confidenceFill');
+    const label = document.getElementById('confidenceLabel');
+    const note = document.getElementById('confidenceNote');
+    fill.style.width = (score * 100) + '%';
+    fill.style.background = score >= 0.75 ? 'var(--green)' : score >= 0.5 ? 'var(--yellow)' : 'var(--red)';
+    label.textContent = Math.round(score * 100) + '%';
+    label.style.color = score >= 0.75 ? 'var(--green)' : score >= 0.5 ? 'var(--yellow)' : 'var(--red)';
+    note.textContent = score >= 0.75
+      ? 'Good confidence — the details look complete.'
+      : score >= 0.5
+      ? 'Moderate confidence — check the flagged missing fields above.'
+      : 'Low confidence — please fill in the missing details before generating.';
+  }
+
+  // ─── Smart local parser ─────────────────────────────────────────
+  function parseJobDescription(desc) {
+    const d = desc.toLowerCase();
+
+    // Trade type
+    let trade_type = 'General Tradesperson';
+    if (/electr|fuse|consumer unit|socket|light|circuit|wiring|cable/i.test(d)) trade_type = 'Electrician';
+    else if (/plumb|pipe|boiler|radiator|tap|drain|leak|toilet|bath/i.test(d)) trade_type = 'Plumber';
+    else if (/build|brick|wall|roof|render|plaster|tile|floor|paint|damp/i.test(d)) trade_type = 'Builder';
+    else if (/gas|boiler|heating|combi/i.test(d)) trade_type = 'Gas Engineer';
+    else if (/carpet|flooring|laminate|vinyl/i.test(d)) trade_type = 'Flooring Specialist';
+    else if (/roof|guttering|fascia|soffit/i.test(d)) trade_type = 'Roofer';
+
+    // Job summary — clean first sentence
+    const job_summary = desc.charAt(0).toUpperCase() + desc.slice(1, 180).trim();
+
+    // Tasks — extract action phrases
+    const taskPatterns = [
+      /fit(?:ting)?\s+[\w\s]+/gi,
+      /install(?:ing)?\s+[\w\s]+/gi,
+      /replac(?:e|ing)\s+[\w\s]+/gi,
+      /repair(?:ing)?\s+[\w\s]+/gi,
+      /fix(?:ing)?\s+[\w\s]+/gi,
+      /remov(?:e|ing)\s+[\w\s]+/gi,
+      /supply(?:ing)?\s+[\w\s]+/gi,
+      /connect(?:ing)?\s+[\w\s]+/gi,
+      /test(?:ing)?\s+[\w\s]+/gi,
+    ];
+    const tasks = [];
+    taskPatterns.forEach(re => {
+      const matches = desc.match(re) || [];
+      matches.forEach(m => {
+        const clean = m.replace(/,.*$/,'').trim().slice(0, 60);
+        if (clean.length > 4 && !tasks.includes(clean)) tasks.push(clean);
+      });
+    });
+    if (tasks.length === 0) tasks.push('General ' + trade_type.toLowerCase() + ' works');
+
+    // Materials
+    const materialWords = [
+      'consumer unit','socket','cable','pipe','boiler','radiator','tap','tile','board',
+      'plasterboard','cement','brick','timber','joist','light fitting','switch',
+      'connector','junction box','valve','pump','thermostat','tank','cylinder'
+    ];
+    const materials_needed = materialWords.filter(m => d.includes(m))
+      .map(m => m.charAt(0).toUpperCase() + m.slice(1));
+
+    // Labour hours
+    const hoursMatch = d.match(/(\d+(?:\.\d+)?)\s*(?:hours?|hrs?)/);
+    const labour_estimate_hours = hoursMatch ? parseFloat(hoursMatch[1]) : '';
+
+    // Urgency
+    let urgency = 'Standard';
+    if (/urgent|emergency|asap|today|straight away|right away/i.test(d)) urgency = 'Urgent';
+    else if (/next week|schedule|plan/i.test(d)) urgency = 'Planned';
+
+    // Location
+    let location = '';
+    const locMatch = desc.match(/(?:in|at|near)\s+([A-Z][a-zA-Z\s]{2,30}?)(?:\s*[,\."]|$)/);
+    if (locMatch) location = locMatch[1].trim();
+
+    // Assumptions
+    const assumptions = [];
+    if (!hoursMatch) assumptions.push('Labour hours estimated based on job type');
+    const rateMatch = d.match(/£\d+\s*(?:per hour|p\/h|\/hr)/i);
+    if (!rateMatch) assumptions.push('Hourly rate assumed at £35/hr');
+    if (!/(vat|tax)/i.test(d)) assumptions.push('VAT at 20% applied');
+    if (materials_needed.length === 0) assumptions.push('Materials cost to be confirmed on site');
+
+    // Missing information
+    const missing_information = [];
+    if (!labour_estimate_hours) missing_information.push('Labour hours not specified');
+    if (!/(£\d+|cost|price|parts?|materials?)/i.test(d)) missing_information.push('Materials/parts cost not mentioned');
+    if (!/(customer|client|mr|mrs|ms|for\s+[A-Z])/i.test(desc)) missing_information.push('Customer name not provided');
+    if (!location) missing_information.push('Job location not specified');
+
+    // Confidence score
+    let score = 1.0;
+    score -= missing_information.length * 0.15;
+    score -= assumptions.length * 0.05;
+    score = Math.max(0.1, Math.min(1.0, parseFloat(score.toFixed(2))));
+
+    return {
+      trade_type, job_summary, tasks, materials_needed,
+      labour_estimate_hours, urgency, location,
+      assumptions, missing_information,
+      confidence_score: score
+    };
+  }
+
+  // ─── Step 2 → Step 3: Generate Quote ───────────────────────────
+  document.getElementById('generateBtn').addEventListener('click', () => {
+    const schema = {
+      trade_type: document.getElementById('s_trade_type').value,
+      job_summary: document.getElementById('s_job_summary').value,
+      tasks: tagData.tasks,
+      materials_needed: tagData.materials,
+      labour_estimate_hours: parseFloat(document.getElementById('s_labour_hours').value) || 0,
+      urgency: document.getElementById('s_urgency').value,
+      location: document.getElementById('s_location').value,
+    };
+
+    const today = new Date();
+    const dateStr = today.toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric' });
+    const validUntil = new Date(today.setDate(today.getDate()+30)).toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric' });
+    const quoteNum = 'QT-' + Math.floor(Math.random()*9000+1000);
+
+    const quote = buildQuote(schema);
+    renderQuote(quote, quoteNum, dateStr, validUntil);
+    setStep(3);
+  });
+
+  function buildQuote(s) {
+    const rate = 35;
+    const hours = s.labour_estimate_hours || 4;
+    const labourTotal = hours * rate;
+
+    // Estimate materials from tag count
+    const matEstimate = s.materials_needed.length > 0
+      ? s.materials_needed.length * 40
+      : 80;
+
+    const lineItems = [];
+
+    if (s.urgency === 'Urgent') {
+      lineItems.push({ description: 'Emergency Call-out Charge', qty: 1, unit: 'item', unitPrice: 75, total: 75 });
+    }
+
+    lineItems.push({ description: 'Labour — ' + (s.trade_type || 'General works'), qty: hours, unit: 'hrs', unitPrice: rate, total: labourTotal });
+
+    if (s.materials_needed.length > 0) {
+      s.materials_needed.forEach(mat => {
+        lineItems.push({ description: 'Supply: ' + mat, qty: 1, unit: 'item', unitPrice: 40, total: 40 });
+      });
+    } else {
+      lineItems.push({ description: 'Materials & Parts', qty: 1, unit: 'item', unitPrice: matEstimate, total: matEstimate });
+    }
+
+    const subtotal = lineItems.reduce((a,i) => a + i.total, 0);
+    const vatAmount = parseFloat((subtotal * 0.2).toFixed(2));
+    const grandTotal = parseFloat((subtotal + vatAmount).toFixed(2));
+
+    const surname = s.job_summary.match(/(?:customer|client|for)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/i);
+    const businessSuffix = { Electrician:'Electrical Services', Plumber:'Plumbing Services', Builder:'Building Services', 'Gas Engineer':'Heating Services' }[s.trade_type] || 'Trade Services';
+    const businessName = (surname ? surname[1].split(' ').pop() : 'Pro') + ' ' + businessSuffix;
+
+    const nameMatch = s.job_summary.match(/(?:customer|client|for)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/i);
+    const customerName = nameMatch ? nameMatch[1] : 'Valued Customer';
+
+    return {
+      businessName, tradeType: s.trade_type, customerName,
+      customerAddress: s.location || 'TBC',
+      jobTitle: s.tasks.length > 0 ? s.tasks[0] : s.job_summary.slice(0,60),
+      lineItems, subtotal, vatRate: 20, vatAmount, grandTotal,
+      notes: 'Payment is due within 14 days of completion. All workmanship carries a 12-month guarantee. Any additional works identified on site will be quoted separately prior to proceeding.'
+    };
+  }
+
+  function fmt(n) {
+    return '£' + Number(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  }
+
+  function renderQuote(q, quoteNum, dateStr, validUntil) {
+    const rows = q.lineItems.map(i => `
+      <tr>
+        <td>${i.description}</td>
+        <td style="text-align:center">${i.qty} ${i.unit}</td>
+        <td style="text-align:right">${fmt(i.unitPrice)}</td>
+        <td style="text-align:right">${fmt(i.total)}</td>
+      </tr>`).join('');
+
+    document.getElementById('quoteContent').innerHTML = `
+      <div class="quote-header">
+        <div>
+          <div class="business-name">${q.businessName}</div>
+          <div style="font-size:12px;color:var(--muted)">${q.tradeType}</div>
+        </div>
+        <div class="quote-meta">
+          <div class="quote-number">${quoteNum}</div>
+          <div>Date: ${dateStr}</div>
+        </div>
+      </div>
+      <div class="customer-block">
+        <strong>Quote For</strong>
+        ${q.customerName}<br>${q.customerAddress}
+      </div>
+      <div style="font-weight:600;margin-bottom:12px;font-size:15px">${q.jobTitle}</div>
+      <table class="items-table">
+        <thead>
+          <tr>
+            <th>Description</th>
+            <th style="text-align:center">Qty</th>
+            <th style="text-align:right">Unit Price</th>
+            <th style="text-align:right">Total</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div class="totals">
+        <div class="total-row"><span>Subtotal</span><span>${fmt(q.subtotal)}</span></div>
+        <div class="total-row"><span>VAT (${q.vatRate}%)</span><span>${fmt(q.vatAmount)}</span></div>
+        <div class="total-row grand"><span>Total</span><span>${fmt(q.grandTotal)}</span></div>
+      </div>
+      <div class="notes-block">
+        <strong>Notes &amp; Terms</strong>${q.notes}
+      </div>
+      <div class="validity">Quote valid until ${validUntil}</div>`;
+  }
+
+  function copyQuote() {
+    navigator.clipboard.writeText(document.getElementById('quoteContent').innerText)
+      .then(() => alert('Quote copied!'));
+  }
+
+  function resetAll() {
+    transcriptBox.value = '';
+    finalTranscript = '';
+    recordStatus.textContent = 'Tap to record a voice note';
+    recordStatus.className = '';
+    setStep(1);
+  }
+</script>
+</body>
+</html>
