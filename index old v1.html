@@ -570,11 +570,6 @@
   let recognition = null;
   let isRecording = false;
   let finalTranscript = '';
-  let sessionTranscript = '';
-
-  // Detect mobile — mobile browsers restart recognition on every pause
-  // causing duplicate words. We handle this differently on mobile.
-  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
@@ -584,151 +579,59 @@
   } else {
     recordBtn.addEventListener('click', () => {
       if (!isRecording) {
-        startRecording();
-      } else {
-        stopRecording();
-      }
-    });
-  }
-
-  function startRecording() {
-    finalTranscript = '';
-    sessionTranscript = transcriptBox.value.trim();
-    // If there is already text in the box, preserve it and append
-    if (sessionTranscript) sessionTranscript += ' ';
-
-    recognition = new SpeechRecognition();
-
-    // Mobile: do NOT use continuous mode — let it stop naturally
-    // Desktop: use continuous mode for uninterrupted recording
-    recognition.continuous = !isMobile;
-    recognition.interimResults = !isMobile; // mobile: final results only
-    recognition.lang = 'en-GB';
-    recognition.maxAlternatives = 1;
-
-    recognition.onstart = () => {
-      isRecording = true;
-      recordBtn.classList.add('recording');
-      recordStatus.textContent = '● Recording... tap to stop';
-      recordStatus.className = 'active';
-    };
-
-    recognition.onresult = (e) => {
-      if (isMobile) {
-        // Mobile: only process final results to avoid duplicates
-        // Each recognition session gives us one clean result
-        let sessionResult = '';
-        for (let i = 0; i < e.results.length; i++) {
-          if (e.results[i].isFinal) {
-            sessionResult += e.results[i][0].transcript + ' ';
-          }
-        }
-        finalTranscript = sessionResult;
-        transcriptBox.value = (sessionTranscript + finalTranscript).trim();
-      } else {
-        // Desktop: track from resultIndex to avoid replaying old results
-        let interim = '';
-        for (let i = e.resultIndex; i < e.results.length; i++) {
-          if (e.results[i].isFinal) {
-            finalTranscript += e.results[i][0].transcript + ' ';
-          } else {
-            interim += e.results[i][0].transcript;
-          }
-        }
-        transcriptBox.value = (sessionTranscript + finalTranscript + interim).trim();
-      }
-    };
-
-    recognition.onerror = (e) => {
-      if (e.error === 'no-speech') {
-        // On mobile, no-speech just means a pause — restart cleanly
-        if (isMobile && isRecording) {
-          restartMobileRecognition();
-        }
-        return;
-      }
-      if (e.error === 'aborted') return; // user stopped manually
-      isRecording = false;
-      recordBtn.classList.remove('recording');
-      recordStatus.textContent = e.error === 'not-allowed'
-        ? 'Microphone blocked — check permissions or type below.'
-        : 'Error: ' + e.error + ' — try typing below.';
-      recordStatus.className = '';
-    };
-
-    recognition.onend = () => {
-      if (!isRecording) return; // user stopped — do nothing
-
-      if (isMobile) {
-        // On mobile, when a session ends naturally, save what we got
-        // and start a fresh session to continue recording
-        sessionTranscript = transcriptBox.value.trim() + ' ';
         finalTranscript = '';
-        restartMobileRecognition();
-      } else {
-        // Desktop: restart to keep continuous recording going
-        try { recognition.start(); } catch(e) {}
-      }
-    };
-
-    try {
-      recognition.start();
-    } catch(err) {
-      recordStatus.textContent = 'Could not start microphone — try typing below.';
-    }
-  }
-
-  function restartMobileRecognition() {
-    // Small delay prevents iOS/Android from throwing an error on immediate restart
-    setTimeout(() => {
-      if (!isRecording) return;
-      try {
         recognition = new SpeechRecognition();
-        recognition.continuous = false;
-        recognition.interimResults = false;
+        recognition.continuous = true;
+        recognition.interimResults = true;
         recognition.lang = 'en-GB';
-        recognition.maxAlternatives = 1;
-        recognition.onstart = recognition.onstart; // preserve handlers
-        // Re-attach all handlers
+
+        recognition.onstart = () => {
+          isRecording = true;
+          recordBtn.classList.add('recording');
+          recordStatus.textContent = '● Recording... tap to stop';
+          recordStatus.className = 'active';
+        };
+
         recognition.onresult = (e) => {
-          let sessionResult = '';
-          for (let i = 0; i < e.results.length; i++) {
+          let interim = '';
+          for (let i = e.resultIndex; i < e.results.length; i++) {
             if (e.results[i].isFinal) {
-              sessionResult += e.results[i][0].transcript + ' ';
+              finalTranscript += e.results[i][0].transcript + ' ';
+            } else {
+              interim += e.results[i][0].transcript;
             }
           }
-          finalTranscript = sessionResult;
-          transcriptBox.value = (sessionTranscript + finalTranscript).trim();
+          transcriptBox.value = (finalTranscript + interim).trim();
         };
-        recognition.onerror = (e) => {
-          if (e.error === 'no-speech' || e.error === 'aborted') return;
-          stopRecording();
-        };
-        recognition.onend = () => {
-          if (!isRecording) return;
-          sessionTranscript = transcriptBox.value.trim() + ' ';
-          finalTranscript = '';
-          restartMobileRecognition();
-        };
-        recognition.start();
-      } catch(err) {
-        // If restart fails, just stop gracefully
-        stopRecording();
-      }
-    }, 250);
-  }
 
-  function stopRecording() {
-    isRecording = false;
-    if (recognition) {
-      recognition.onend = null; // prevent auto-restart
-      try { recognition.stop(); } catch(e) {}
-    }
-    recordBtn.classList.remove('recording');
-    recordStatus.textContent = transcriptBox.value.trim()
-      ? '✅ Done — edit if needed, then extract details.'
-      : 'Stopped. Type your description below.';
-    recordStatus.className = '';
+        recognition.onerror = (e) => {
+          if (e.error === 'no-speech') return;
+          isRecording = false;
+          recordBtn.classList.remove('recording');
+          recordStatus.textContent = e.error === 'not-allowed'
+            ? 'Microphone blocked — type below.'
+            : 'Error: ' + e.error + ' — type below.';
+          recordStatus.className = '';
+        };
+
+        recognition.onend = () => {
+          if (isRecording) recognition.start();
+        };
+
+        try { recognition.start(); }
+        catch(err) { recordStatus.textContent = 'Could not start mic — type below.'; }
+
+      } else {
+        isRecording = false;
+        recognition.onend = null;
+        recognition.stop();
+        recordBtn.classList.remove('recording');
+        recordStatus.textContent = transcriptBox.value
+          ? '✅ Done — edit if needed, then extract details.'
+          : 'Stopped. Type your description below.';
+        recordStatus.className = '';
+      }
+    });
   }
 
   // ─── Tag helpers ────────────────────────────────────────────────
@@ -1038,13 +941,6 @@
   function resetAll() {
     transcriptBox.value = '';
     finalTranscript = '';
-    sessionTranscript = '';
-    if (recognition) {
-      recognition.onend = null;
-      try { recognition.stop(); } catch(e) {}
-    }
-    isRecording = false;
-    recordBtn.classList.remove('recording');
     recordStatus.textContent = 'Tap to record a voice note';
     recordStatus.className = '';
     setStep(1);
