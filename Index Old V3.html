@@ -1180,16 +1180,9 @@ function populateSchema(s) {
   document.getElementById('s_city').value = s.city || '';
   document.getElementById('s_postcode').value = s.postcode || '';
 
-  // Labour — populate based on what was detected
-  if (s.labour_fixed_total) {
-    // Switch to fixed total mode
-    setLabourMode('total');
-    document.getElementById('s_labour_total').value = s.labour_fixed_total;
-  } else {
-    setLabourMode('rate');
-    if (s.labour_hours) document.getElementById('s_labour_hours').value = s.labour_hours;
-    if (s.hourly_rate) document.getElementById('s_hourly_rate').value = s.hourly_rate;
-  }
+  // Labour — never assume, leave blank if not found
+  if (s.labour_hours) document.getElementById('s_labour_hours').value = s.labour_hours;
+  if (s.hourly_rate) document.getElementById('s_hourly_rate').value = s.hourly_rate;
 
   tagData.tasks = s.tasks || [];
   tagData.materials = s.materials_needed || [];
@@ -1197,9 +1190,6 @@ function populateSchema(s) {
   tagData.missing = s.missing_information || [];
 
   ['tasks','materials','assumptions','missing'].forEach(renderTags);
-
-  // Store detected materials cost globally so generateQuote can use it
-  window._detectedMatCost = s.materials_cost || 0;
 
   const score = s.confidence_score || 0;
   const fill = document.getElementById('confidenceFill');
@@ -1250,38 +1240,12 @@ function parseJobDescription(desc) {
   const cityMatch = desc.match(/(?:in|at)\s+([A-Z][a-zA-Z\s]{2,20}?)(?:\s+[A-Z]{1,2}\d|\s*,|\s*\.)/);
   if (cityMatch) city = cityMatch[1].trim();
 
-  // Labour — detect hours+rate OR fixed total cost
-  let labour_hours = '', hourly_rate = '', labour_fixed_total = '';
-
-  // Match: "6 hours" / "6 hrs"
+  // Labour — only extract if explicitly mentioned, never assume
+  let labour_hours = '', hourly_rate = '';
   const hoursMatch = d.match(/(\d+(?:\.\d+)?)\s*(?:hours?|hrs?)/);
   if (hoursMatch) labour_hours = parseFloat(hoursMatch[1]);
-
-  // Match: "£35 per hour" / "35 per hour" / "£35/hr"
-  const rateMatch = d.match(/£?(\d+)\s*(?:per\s+hour|p\/h|\/hr|an\s+hour)/i);
+  const rateMatch = d.match(/£(\d+)\s*(?:per\s+hour|p\/h|\/hr|an\s+hour)/i);
   if (rateMatch) hourly_rate = parseFloat(rateMatch[1]);
-
-  // Match spoken fixed labour cost patterns:
-  // "labour costing £300" / "labour is £300" / "labour cost of £300"
-  // "labour £300" / "£300 for labour" / "£300 labour"
-  const labourCostMatch = d.match(
-    /labour(?:\s+(?:is|will be|costing|costs?|cost of|totalling|at))?\s*[£]?(\d+(?:\.\d+)?)/i
-  ) || d.match(
-    /[£](\d+(?:\.\d+)?)\s*(?:for\s+)?labour/i
-  );
-  if (labourCostMatch && !labour_hours) {
-    labour_fixed_total = parseFloat(labourCostMatch[1]);
-  }
-
-  // Match spoken materials cost patterns:
-  // "materials costing £145" / "materials cost £145" / "parts £145" / "£145 for materials"
-  let materials_cost = '';
-  const materialsCostMatch = d.match(
-    /(?:materials?|parts?|supplies?)(?:\s+(?:is|are|will be|costing|costs?|cost of|totalling|at))?\s*[£]?(\d+(?:\.\d+)?)/i
-  ) || d.match(
-    /[£](\d+(?:\.\d+)?)\s*(?:for\s+)?(?:materials?|parts?|supplies?)/i
-  );
-  if (materialsCostMatch) materials_cost = parseFloat(materialsCostMatch[1]);
 
   // Tasks
   const taskPatterns = [/fit(?:ting)?\s+[\w\s,]+/gi,/install(?:ing)?\s+[\w\s,]+/gi,/replac(?:e|ing)\s+[\w\s,]+/gi,/repair(?:ing)?\s+[\w\s,]+/gi,/fix(?:ing)?\s+[\w\s,]+/gi];
@@ -1308,8 +1272,8 @@ function parseJobDescription(desc) {
 
   // Missing information
   const missing_information = [];
-  if (!labour_hours && !labour_fixed_total) missing_information.push('Labour cost not specified — please enter above');
-  if (labour_hours && !hourly_rate) missing_information.push('Hourly rate not specified — please enter above');
+  if (!labour_hours) missing_information.push('Labour hours not specified — please enter above');
+  if (!hourly_rate) missing_information.push('Hourly rate not specified — please enter above');
   if (!customer_name) missing_information.push('Customer name not provided');
   if (!customer_phone) missing_information.push('Customer phone number not provided');
   if (!address && !city) missing_information.push('Job address not specified');
@@ -1319,7 +1283,7 @@ function parseJobDescription(desc) {
   score -= missing_information.length * 0.12;
   score = Math.max(0.1, Math.min(1.0, parseFloat(score.toFixed(2))));
 
-  return { trade_type, job_summary, customer_name, customer_phone, address, city, postcode, tasks, materials_needed, labour_hours, hourly_rate, labour_fixed_total, materials_cost, urgency, assumptions, missing_information, confidence_score: score };
+  return { trade_type, job_summary, customer_name, customer_phone, address, city, postcode, tasks, materials_needed, labour_hours, hourly_rate, urgency, assumptions, missing_information, confidence_score: score };
 }
 
 // ─── Generate Quote ──────────────────────────────────────────────
@@ -1363,20 +1327,9 @@ function generateQuote() {
     lineItems.push({ description: 'Labour — ' + tradeType, qty: 1, unit: 'job', unitPrice: labourTotalFixed, total: labourTotalFixed });
   }
 
-  // Add materials as a costed line item if a cost was detected
-  const detectedMatCost = parseFloat(document.getElementById('s_labour_total').dataset.matCost || 0);
-  if (tagData.materials.length > 0) {
-    tagData.materials.forEach(mat => {
-      lineItems.push({ description: 'Supply & fit: ' + mat, qty: 1, unit: 'item', unitPrice: 0, total: 0, note: 'TBC' });
-    });
-  }
-  // If a spoken materials cost was found but no individual items, add as a single line
-  if (window._detectedMatCost && window._detectedMatCost > 0 && tagData.materials.length === 0) {
-    lineItems.push({ description: 'Materials & Parts', qty: 1, unit: 'item', unitPrice: window._detectedMatCost, total: window._detectedMatCost });
-  } else if (window._detectedMatCost && window._detectedMatCost > 0) {
-    // Replace TBC materials with a single costed materials line
-    lineItems.push({ description: 'Materials & Parts (total)', qty: 1, unit: 'item', unitPrice: window._detectedMatCost, total: window._detectedMatCost });
-  }
+  tagData.materials.forEach(mat => {
+    lineItems.push({ description: 'Supply & fit: ' + mat, qty: 1, unit: 'item', unitPrice: 0, total: 0, note: 'TBC' });
+  });
 
   if (document.getElementById('s_urgency').value === 'Urgent' || document.getElementById('s_urgency').value === 'Emergency') {
     lineItems.push({ description: 'Emergency call-out charge', qty: 1, unit: 'item', unitPrice: 75, total: 75 });
