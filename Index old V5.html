@@ -368,13 +368,9 @@
 
   /* Quote */
   .quote-paper {
-    background: white; border-radius: 12px; padding: 20px;
+    background: white; border-radius: 12px; padding: 28px;
     color: #1a1a2e; font-family: 'Inter', sans-serif;
-    overflow-x: hidden; word-wrap: break-word; overflow-wrap: break-word;
   }
-  .quote-paper * { max-width: 100%; }
-  .items-table { table-layout: fixed; }
-  .items-table td, .items-table th { overflow-wrap: break-word; word-break: break-word; }
 
   .quote-biz-header {
     display: flex; justify-content: space-between;
@@ -814,79 +810,54 @@ function removeTag(type, index) {
 }
 
 // ─── Clean spoken text for specific field types ──────────────────
-// Fix 3: remove immediately repeated words e.g. "seven seven seven" -> dedup consecutive
-function dedupeWords(text) {
-  const words = text.trim().split(/\s+/);
-  const deduped = words.filter((w, i) => i === 0 || w.toLowerCase() !== words[i-1].toLowerCase());
-  return deduped.join(' ');
-}
-
-// Fix 2: convert spoken number words to digits for phone fields
-function spokenToDigits(text) {
-  const map = {
-    'zero':'0','one':'1','two':'2','three':'3','four':'4',
-    'five':'5','six':'6','seven':'7','eight':'8','nine':'9',
-    'oh':'0','o':'0','double zero':'00','double one':'11',
-    'double two':'22','double three':'33','double four':'44',
-    'double five':'55','double six':'66','double seven':'77',
-    'double eight':'88','double nine':'99',
-    'triple zero':'000','triple one':'111','triple two':'222',
-    'triple three':'333','triple four':'444','triple five':'555',
-    'triple six':'666','triple seven':'777','triple eight':'888',
-    'triple nine':'999'
-  };
-  let t = text.toLowerCase().trim();
-  // Replace multi-word patterns first
-  Object.keys(map).sort((a,b) => b.length - a.length).forEach(k => {
-    t = t.replace(new RegExp('\\b' + k + '\\b', 'gi'), map[k]);
-  });
-  // Extract only digits and + from result
-  return t.replace(/[^0-9+]/g, '');
-}
-
 function cleanForField(text, fieldId) {
-  // Fix 3: always deduplicate consecutive repeated words first
-  let t = dedupeWords(text).trim();
+  let t = text.trim();
 
   // Email field — convert spoken punctuation to symbols
   if (fieldId && (fieldId.includes('email'))) {
     t = t.toLowerCase();
+    // spoken punctuation
     t = t.replace(/\s*dot\s*/gi, '.');
-    t = t.replace(/\s*got\s*/gi, '.');
     t = t.replace(/\s*at\s*/gi, '@');
     t = t.replace(/\s*underscore\s*/gi, '_');
     t = t.replace(/\s*hyphen\s*/gi, '-');
     t = t.replace(/\s*dash\s*/gi, '-');
-    t = t.replace(/\s+@\s+/g, '@').replace(/\s+\.\s+/g, '.').replace(/@\s+/g, '@').replace(/\s+@/g, '@');
-    t = t.replace(/\.\s+/g, '.').replace(/\s+\./g, '.');
+    // remove spaces inside email (speech often adds spaces)
+    // find the @ and remove spaces around it and around dots
+    t = t.replace(/\s+@\s+/g, '@');
+    t = t.replace(/\s+\.\s+/g, '.');
+    t = t.replace(/@\s+/g, '@');
+    t = t.replace(/\s+@/g, '@');
+    t = t.replace(/\.\s+/g, '.');
+    t = t.replace(/\s+\./g, '.');
+    // remove any remaining spaces (email has no spaces)
     t = t.replace(/\s+/g, '');
     return t;
   }
 
-  // Postcode field — uppercase and format
+  // Postcode field — uppercase, remove extra spaces
   if (fieldId && fieldId.includes('postcode')) {
     t = t.toUpperCase().replace(/\s+/g, ' ').trim();
+    // format as proper postcode e.g. M1 1AA or WN1 1AB
     t = t.replace(/([A-Z]{1,2}\d{1,2})\s*(\d[A-Z]{2})/i, '$1 $2').toUpperCase();
     return t;
   }
 
-  // Fix 2: Phone field — handle spoken numbers including triple/double
+  // Phone field — digits and spaces only
   if (fieldId && (fieldId.includes('phone') || fieldId.includes('tel'))) {
-    // First try converting spoken words to digits
-    const fromWords = spokenToDigits(t);
-    if (fromWords.length >= 7) return fromWords;
-    // Otherwise just strip non-numeric
-    return t.replace(/[^0-9+\s]/g, '').trim();
+    // spoken: "zero seven seven zero zero" etc — keep digits and spaces
+    t = t.replace(/[^0-9\s+]/g, '').trim();
+    return t;
   }
 
-  // VAT field
+  // VAT field — uppercase, digits only with GB prefix
   if (fieldId && fieldId.includes('vat')) {
     t = t.toUpperCase().replace(/\s+/g, '');
     if (!t.startsWith('GB') && /\d/.test(t)) t = 'GB' + t.replace(/[^0-9]/g, '');
     return t;
   }
 
-  // Default
+  // Default — return as spoken with first letter capitalised
   return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
@@ -1186,9 +1157,6 @@ function extractDetails() {
     alert('Please describe the job first — by voice or by typing.');
     return;
   }
-  // Fix 1: stop recording if still active before proceeding
-  if (isRecording) stopMainRecording();
-
   const btn = document.getElementById('extractBtn');
   btn.disabled = true;
   btn.innerHTML = '<div class="loading-dots"><span>●</span><span>●</span><span>●</span></div>';
@@ -1260,38 +1228,18 @@ function parseJobDescription(desc) {
   else if (/carpet|flooring|laminate|vinyl/i.test(d)) trade_type = 'Flooring Specialist';
   else if (/roof|guttering|fascia|soffit/i.test(d)) trade_type = 'Roofer';
 
-  // Fix 7: Strip pricing info from job summary — it belongs in line items not description
-  const stripPricing = (text) => text
-    .replace(/(?:labour|materials?|parts?|supplies?)\s+(?:costing|costs?|is|are|at|totalling)?\s*[£]?\d+(?:\.\d+)?/gi, '')
-    .replace(/[£]\d+(?:\.\d+)?\s*(?:for\s+)?(?:labour|materials?|parts?|supplies?)?/gi, '')
-    .replace(/\d+\s*(?:hours?|hrs?)\s*(?:at\s*[£]?\d+)?/gi, '')
-    .replace(/[£]\d+(?:\.\d+)?\s*(?:per\s+hour|p\/h|\/hr)?/gi, '')
-    .replace(/\s{2,}/g, ' ').trim();
-  const cleanDesc = stripPricing(desc);
-  const job_summary = cleanDesc.charAt(0).toUpperCase() + cleanDesc.slice(1, 200).trim();
+  const job_summary = desc.charAt(0).toUpperCase() + desc.slice(1, 200).trim();
 
-  // Fix 4: Customer name — handle "customer name John Smith", "customer is John Smith"
+  // Customer name
   let customer_name = '';
-  const nameMatch = desc.match(/customer(?:\s+(?:name|is|:))?\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/i)
-    || desc.match(/for\s+([A-Z][a-z]+\s+[A-Z][a-z]+)/i)
-    || desc.match(/(?:name\s+is|name:)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/i);
-  if (nameMatch) {
-    // Strip any leading "name" word that may have been captured
-    customer_name = nameMatch[1].replace(/^name\s+/i, '').trim();
-  }
+  const nameMatch = desc.match(/customer(?:\s+is|:)?\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/i)
+    || desc.match(/for\s+([A-Z][a-z]+\s+[A-Z][a-z]+)/i);
+  if (nameMatch) customer_name = nameMatch[1];
 
-  // Fix 5: Customer phone — handle "customer phone number 07700..." and "my number is..."
+  // Customer phone
   let customer_phone = '';
-  const phoneMatch = desc.match(/(?:customer\s+)?(?:phone(?:\s+number)?|tel(?:ephone)?|mob(?:ile)?|contact(?:\s+number)?)\s*(?:is|:)?\s*(?:\+44\s?|0)(\d[\d\s]{9,12})/i)
-    || desc.match(/(?:\+44\s?|0)(7\d{9})/i)
-    || desc.match(/(?:\+44\s?|0)(\d[\d\s]{9,12})/i);
-  if (phoneMatch) {
-    customer_phone = phoneMatch[0].replace(/[^0-9+]/g,'').trim();
-    // Ensure it starts with 0 if UK number without +44
-    if (customer_phone.length === 10 && !customer_phone.startsWith('0') && !customer_phone.startsWith('+')) {
-      customer_phone = '0' + customer_phone;
-    }
-  }
+  const phoneMatch = desc.match(/(?:phone|tel|number|mob(?:ile)?)?[\s:]*(?:\+44\s?|0)(\d[\d\s]{9,12})/i);
+  if (phoneMatch) customer_phone = phoneMatch[0].replace(/[^0-9+\s]/g,'').trim();
 
   // Address
   let address = '', city = '', postcode = '';
@@ -1325,27 +1273,15 @@ function parseJobDescription(desc) {
     labour_fixed_total = parseFloat(labourCostMatch[1]);
   }
 
-  // Fix 8: Broader materials cost detection including "supply and fit" phrases
+  // Match spoken materials cost patterns:
+  // "materials costing £145" / "materials cost £145" / "parts £145" / "£145 for materials"
   let materials_cost = '';
-
-  // Patterns: "supply and fit consumer units switches and sockets £450"
-  // "pricing for supply and fit ... £450"
-  // "materials costing £145" / "parts £145" / "£145 for materials"
   const materialsCostMatch = d.match(
-    /(?:pricing\s+for\s+)?(?:supply\s+(?:and\s+)?fit|materials?|parts?|supplies?|equipment|goods)(?:[^£\d]{0,60})[£](\d+(?:\.\d+)?)/i
+    /(?:materials?|parts?|supplies?)(?:\s+(?:is|are|will be|costing|costs?|cost of|totalling|at))?\s*[£]?(\d+(?:\.\d+)?)/i
   ) || d.match(
-    /[£](\d+(?:\.\d+)?)\s*(?:for\s+)?(?:supply\s+(?:and\s+)?fit|materials?|parts?|supplies?)/i
-  ) || d.match(
-    /(?:supply\s+and\s+fit|materials?|parts?)(?:\s+(?:is|are|will be|costing|costs?|cost of|totalling|comes?\s+to|at))?\s*[£]?(\d+(?:\.\d+)?)/i
+    /[£](\d+(?:\.\d+)?)\s*(?:for\s+)?(?:materials?|parts?|supplies?)/i
   );
   if (materialsCostMatch) materials_cost = parseFloat(materialsCostMatch[1]);
-
-  // Also detect individual item pricing e.g. "consumer units £50 each" — store total if found
-  const itemPriceMatches = [...d.matchAll(/(?:consumer\s+unit|socket|switch|tap|radiator|boiler)[^£\d]{0,20}[£]?(\d+(?:\.\d+)?)/gi)];
-  if (!materials_cost && itemPriceMatches.length > 0) {
-    const itemTotal = itemPriceMatches.reduce((sum, m) => sum + parseFloat(m[1]), 0);
-    if (itemTotal > 0) materials_cost = itemTotal;
-  }
 
   // Tasks
   const taskPatterns = [/fit(?:ting)?\s+[\w\s,]+/gi,/install(?:ing)?\s+[\w\s,]+/gi,/replac(?:e|ing)\s+[\w\s,]+/gi,/repair(?:ing)?\s+[\w\s,]+/gi,/fix(?:ing)?\s+[\w\s,]+/gi];
