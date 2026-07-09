@@ -1386,28 +1386,6 @@ function parseJobDescription(desc) {
   return { trade_type, job_summary, customer_name, customer_phone, address, city, postcode, tasks, materials_needed, labour_hours, hourly_rate, labour_fixed_total, materials_cost, urgency, assumptions, missing_information, confidence_score: score };
 }
 
-// ─── Sequential quote numbering (localStorage — swap for API in Step 4) ────
-function getNextQuoteNumber(year) {
-  const storageKey = 'tq_quote_counter_' + year;
-  const lastYearKey = 'tq_quote_year';
-
-  // If the year has changed, reset the counter
-  const storedYear = localStorage.getItem(lastYearKey);
-  if (storedYear && parseInt(storedYear) !== year) {
-    localStorage.removeItem(storageKey);
-  }
-  localStorage.setItem(lastYearKey, year);
-
-  // Get current counter and increment
-  const current = parseInt(localStorage.getItem(storageKey) || '0');
-  const next = current + 1;
-  localStorage.setItem(storageKey, next);
-
-  // Format as QT-2026-0001
-  const padded = String(next).padStart(4, '0');
-  return 'QT-' + year + '-' + padded;
-}
-
 // ─── Generate Quote ──────────────────────────────────────────────
 function generateQuote() {
   const biz = getBizProfile();
@@ -1446,10 +1424,7 @@ function generateQuote() {
   const today = new Date();
   const dateStr = today.toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric' });
   const validUntil = new Date(new Date().setDate(today.getDate()+30)).toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric' });
-  // Sequential quote numbering — stored in localStorage until Step 4 (database)
-  // Format: QT-2026-0001, QT-2026-0002 etc.
-  // When we move to Step 4 this single function call gets replaced with an API call
-  const quoteNum = getNextQuoteNumber(today.getFullYear());
+  const quoteNum = 'QT-' + today.getFullYear() + '-' + String(Math.floor(Math.random()*9000+1000));
 
   const lineItems = [];
 
