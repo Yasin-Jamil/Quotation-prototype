@@ -1184,8 +1184,8 @@ function voiceIntoField(fieldId) {
       }
     }
     const raw = final || interim;
-    // Email fields open correction modal for easier fixing
-    if (fieldId && fieldId.toLowerCase().includes('email')) {
+    // Email fields open correction modal instead of filling directly
+    if (fieldId && fieldId.includes('email')) {
       openEmailModal(fieldId, raw);
     } else {
       field.value = cleanForField(raw, fieldId);
@@ -1500,20 +1500,15 @@ function populateSchema(s) {
   document.getElementById('s_postcode').value = s.postcode || '';
 
   // Labour — populate based on what was detected
-  // Use setTimeout to ensure DOM is ready after setStep(3) renders
-  setTimeout(() => {
-    if (s.labour_fixed_total) {
-      setLabourMode('total');
-      const el = document.getElementById('s_labour_total');
-      if (el) el.value = s.labour_fixed_total;
-    } else {
-      setLabourMode('rate');
-      const hoursEl = document.getElementById('s_labour_hours');
-      const rateEl = document.getElementById('s_hourly_rate');
-      if (hoursEl && s.labour_hours) hoursEl.value = s.labour_hours;
-      if (rateEl && s.hourly_rate) rateEl.value = s.hourly_rate;
-    }
-  }, 50);
+  if (s.labour_fixed_total) {
+    // Switch to fixed total mode
+    setLabourMode('total');
+    document.getElementById('s_labour_total').value = s.labour_fixed_total;
+  } else {
+    setLabourMode('rate');
+    if (s.labour_hours) document.getElementById('s_labour_hours').value = s.labour_hours;
+    if (s.hourly_rate) document.getElementById('s_hourly_rate').value = s.hourly_rate;
+  }
 
   // Populate tasks (no pricing — Fix 3)
   taskItems.length = 0;
@@ -1551,13 +1546,10 @@ function populateSchema(s) {
   validDate.setDate(validDate.getDate() + 30);
   document.getElementById('s_valid_until').value = validDate.toISOString().split('T')[0];
 
-  // Set default terms (only if not already set by user)
-  const termsEl = document.getElementById('s_payment_terms');
-  const guarEl = document.getElementById('s_guarantee');
-  const notesEl = document.getElementById('s_customer_notes');
-  if (termsEl && !termsEl.value) termsEl.value = 'Payment due within 14 days of completion';
-  if (guarEl && !guarEl.value) guarEl.value = 'All workmanship carries a 12-month guarantee';
-  if (notesEl && !notesEl.value) notesEl.value = '';
+  // Set default terms and guarantee
+  document.getElementById('s_payment_terms').value = 'Payment due within 14 days of completion';
+  document.getElementById('s_guarantee').value = 'All workmanship carries a 12-month guarantee';
+  document.getElementById('s_customer_notes').value = '';
 
   const score = s.confidence_score || 0;
   const fill = document.getElementById('confidenceFill');
@@ -1589,11 +1581,10 @@ function parseJobDescription(desc) {
 
   // ── Customer name ─────────────────────────────────────────────
   let customer_name = '';
-  // Stop name capture at comma, digit, or contact keywords
   const namePatterns = [
-    /customer\s+(?:name\s+is|name|is)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)(?=\s*[,.]|\s+(?:mobile|phone|email|address|at|\d)|$)/i,
-    /(?:quote\s+for|job\s+for|for\s+customer)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)(?=\s*[,.]|\s+(?:mobile|phone|\d)|$)/i,
-    /(?:mr|mrs|ms|miss|dr)\.?\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)(?=\s*[,.]|\s+(?:mobile|phone|\d)|$)/i,
+    /customer\s+(?:name\s+is|name|is)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)/i,
+    /(?:quote\s+for|job\s+for|for\s+customer)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/i,
+    /(?:mr|mrs|ms|miss|dr)\.?\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)/i,
   ];
   for (const pat of namePatterns) {
     const m = desc.match(pat);
@@ -1648,9 +1639,8 @@ function parseJobDescription(desc) {
   const rateMatch = d.match(/[£]?(\d+)\s*(?:per\s+hour|p\/h|\/hr|an\s+hour)/i);
   if (rateMatch) hourly_rate = parseFloat(rateMatch[1]);
 
-  // Make £ optional — speech recognition often omits it
-  const labourMatch = d.match(/labour\s*(?:costing|costs?|is|at|totalling|of)\s*[£]?(\d+(?:\.\d+)?)/i)
-    || d.match(/[£]?(\d+(?:\.\d+)?)\s*(?:for\s+)?labour(?!\s*[a-z])/i);
+  const labourMatch = d.match(/labour\s*(?:costing|costs?|is|at|totalling|of)?\s*[£](\d+(?:\.\d+)?)/i)
+    || d.match(/[£](\d+(?:\.\d+)?)\s*(?:for\s+)?labour/i);
   if (labourMatch && !labour_hours) labour_fixed_total = parseFloat(labourMatch[1]);
 
   // ── Materials — extract each named item with qty and price ────
@@ -1673,18 +1663,17 @@ function parseJobDescription(desc) {
     const escaped = item.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
     // Pattern 1: "2 consumer units costing £65 each"
-    // Make £ optional — speech may omit it. Handle s/es plurals.
     const p1 = new RegExp(
-      '(\\d+)\\s+' + escaped + '(?:s|es)?\\s*(?:costing|costs?|at|@|priced?\\s+at)\\s*[£]?(\\d+(?:\\.\\d+)?)\\s*(?:each|per\\s+unit|a\\s+piece)?',
+      '(\\d+)\\s+' + escaped + 's?\\s*(?:costing|costs?|at|@|priced?\\s+at)?\\s*[£](\\d+(?:\\.\\d+)?)\\s*(?:each|per\\s+unit|a\\s+piece)?',
       'gi'
     );
-    // Pattern 2: "consumer unit costing £100" or "consumer unit costing 100" (no qty)
+    // Pattern 2: "consumer unit costing £100" (no qty)
     const p2 = new RegExp(
-      escaped + '(?:s|es)?\\s*(?:costing|costs?|at|@|is|priced?\\s+at)\\s*[£]?(\\d+(?:\\.\\d+)?)\\s*(?:each|per\\s+unit)?',
+      '(?<!\\d\\s)' + escaped + 's?\\s*(?:costing|costs?|at|@|is|priced?\\s+at)\\s*[£](\\d+(?:\\.\\d+)?)\\s*(?:each|per\\s+unit)?',
       'gi'
     );
     // Pattern 3: qty only, no price
-    const p3 = new RegExp('(\\d+)\\s+' + escaped + '(?:s|es)?(?!\\s*[£\\d])', 'gi');
+    const p3 = new RegExp('(\\d+)\\s+' + escaped + 's?(?!\\s*[£\\d])', 'gi');
 
     let m;
     const resetPatterns = () => { p1.lastIndex = 0; p2.lastIndex = 0; p3.lastIndex = 0; };
@@ -1770,7 +1759,7 @@ function parseJobDescription(desc) {
   if (labour_hours && !hourly_rate) missing_information.push('Hourly rate not specified');
   if (!customer_name) missing_information.push('Customer name not provided');
   if (!customer_phone) missing_information.push('Customer phone number not provided');
-  if (!customer_email) missing_information.push('Customer email not provided (optional)');
+  if (!customer_email) missing_information.push('Customer email not provided');
   if (!address && !city) missing_information.push('Job address not specified');
   if (!postcode) missing_information.push('Postcode not specified');
 
@@ -1835,7 +1824,6 @@ function goBackToReview() {
 
     // Restore VAT, dates, terms, deposit
     setVatMode(s.vatMode || 'standard');
-    setLabourMode(s.labourMode || 'rate');
     if (s.vat_rate) document.getElementById('s_vat_rate').value = s.vat_rate;
     if (s.valid_until) document.getElementById('s_valid_until').value = s.valid_until;
     if (s.payment_terms) document.getElementById('s_payment_terms').value = s.payment_terms;
@@ -1901,7 +1889,6 @@ function generateQuote() {
     materials:       materialItems.map(m => ({...m})),
     assumptions:     [...tagData.assumptions],
     missing:         [...tagData.missing],
-    _quoteNum:       (savedQuoteState && savedQuoteState._quoteNum) ? savedQuoteState._quoteNum : null,
   };
 
   // Read labour values directly from whichever mode is active
@@ -1914,14 +1901,12 @@ function generateQuote() {
   const labourFromRate = labourHours * hourlyRate;
   const labourTotal = labourTotalFixed > 0 ? labourTotalFixed : labourFromRate;
 
-  // Check if there is enough to generate a quote
-  const hasMaterials = materialItems.length > 0 && materialItems.some(m => m.unitPrice > 0);
-  const hasLabour = labourTotal > 0;
-  const hasTasks = taskItems.length > 0;
+  // Materials cost — from spoken detection or manual entry
+  const matCost = window._detectedMatCost || 0;
 
-  if (!hasLabour && !hasMaterials && !hasTasks) {
+  if (labourTotal === 0 && matCost === 0 && tagData.tasks.length === 0) {
     document.getElementById('errorMsg2').style.display = 'block';
-    document.getElementById('errorMsg2').textContent = 'Please enter at least labour costs or materials before generating.';
+    document.getElementById('errorMsg2').textContent = 'Please enter labour or materials costs before generating.';
     return;
   }
 
@@ -1943,32 +1928,33 @@ function generateQuote() {
   // Sequential quote numbering — stored in localStorage until Step 4 (database)
   // If editing an existing quote, reuse its number rather than incrementing
   // When we move to Step 4 this gets replaced with an API call
-  // Reuse quote number if editing, otherwise get next sequential number
-  const quoteNum = (savedQuoteState && savedQuoteState._quoteNum)
+  const quoteNum = savedQuoteState && savedQuoteState._quoteNum
     ? savedQuoteState._quoteNum
     : getNextQuoteNumber(today.getFullYear());
+  // Store the number in state so Edit → re-generate reuses it
+  if (savedQuoteState) savedQuoteState._quoteNum = quoteNum;
 
   const lineItems = [];
 
-  // Labour line item
+  // Labour line — use fixed total if available, otherwise hours x rate
   if (labourTotalFixed > 0) {
-    lineItems.push({ description: 'Labour', qty: 1, unit: 'job', unitPrice: labourTotalFixed, total: labourTotalFixed });
+    lineItems.push({ description: 'Labour — ' + tradeType, qty: 1, unit: 'job', unitPrice: labourTotalFixed, total: labourTotalFixed });
   } else if (labourHours > 0 && hourlyRate > 0) {
-    lineItems.push({ description: 'Labour', qty: labourHours, unit: 'hrs', unitPrice: hourlyRate, total: labourFromRate });
+    lineItems.push({ description: 'Labour — ' + tradeType, qty: labourHours, unit: 'hrs', unitPrice: hourlyRate, total: labourFromRate });
   } else if (labourHours > 0) {
-    lineItems.push({ description: 'Labour', qty: labourHours, unit: 'hrs', unitPrice: 0, total: 0, note: 'Rate TBC' });
+    lineItems.push({ description: 'Labour — ' + tradeType, qty: labourHours, unit: 'hrs', unitPrice: 0, total: 0, note: 'Rate TBC' });
   }
 
-  // Materials — each item with qty × unit price
+  // Fix 2 & 7: Materials from materialItems with qty x unitPrice breakdown
   materialItems.forEach(m => {
-    const itemTotal = parseFloat((m.qty * m.unitPrice).toFixed(2));
+    const total = m.qty * m.unitPrice;
     lineItems.push({
       description: m.name,
       qty: m.qty,
       unit: m.qty > 1 ? 'units' : 'item',
-      unitPrice: m.unitPrice || 0,
-      total: itemTotal,
-      note: (!m.unitPrice || m.unitPrice === 0) ? 'TBC' : null
+      unitPrice: m.unitPrice,
+      total: total,
+      note: m.unitPrice === 0 ? 'TBC' : null
     });
   });
 
@@ -2008,7 +1994,7 @@ function generateQuote() {
   }
 
   const fmt = n => '£' + Number(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  const fmtOrTBC = (n, note) => (note === 'TBC' || (n === 0 && !!note)) ? '<span style="color:#94a3b8">TBC</span>' : fmt(n);
+  const fmtOrTBC = (n, note) => (note === 'TBC' || n === 0 && note) ? '<span style="color:#94a3b8">TBC</span>' : fmt(n);
 
   const bizAddress = [biz.addr1, biz.city, biz.postcode].filter(Boolean).join(', ');
 
@@ -2100,32 +2086,13 @@ function resetAll() {
   liveLabel.classList.remove('recording-active');
   recordStatus.textContent = 'Tap to record a voice note';
   recordStatus.className = '';
-  // Clear all data stores
-  taskItems.length = 0;
-  materialItems.length = 0;
-  tagData.assumptions = [];
-  tagData.missing = [];
-
-  // Clear all review fields
-  const reviewFields = [
-    's_trade_type','s_job_summary','s_customer_name','s_customer_phone',
-    's_customer_email','s_address','s_city','s_postcode',
-    's_labour_hours','s_hourly_rate','s_labour_total',
-    's_payment_terms','s_guarantee','s_customer_notes','s_deposit_value'
-  ];
-  reviewFields.forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.value = '';
-  });
-
-  renderTasks();
-  renderMaterials();
+  taskItems.length = 0; materialItems.length = 0;
+  tagData.assumptions = []; tagData.missing = [];
+  renderTasks(); renderMaterials();
   ['assumptions','missing'].forEach(renderTags);
   setVatMode('standard');
-  setLabourMode('rate');
   setDepositMode('none');
   savedQuoteState = null;
-  window._detectedMatCost = 0;
   setStep(1);
 }
 
