@@ -1579,7 +1579,18 @@ function parseJobDescription(desc) {
   else if (/carpet|flooring|laminate|vinyl/i.test(d)) trade_type = 'Flooring Specialist';
   else if (/roof|guttering|fascia|soffit/i.test(d)) trade_type = 'Roofer';
 
+  // ── Job summary — strip all pricing and contact info ─────────
+  const stripForSummary = (text) => text
+    .replace(/customer\s+(name|is|phone|number|email|address|requires?|wants?)[^,.]*/gi, '')
+    .replace(/(?:labour|materials?|parts?|supplies?)\s*(?:costing|costs?|is|are|at|totalling)?\s*[£]?\d+(?:\.\d+)?/gi, '')
+    .replace(/[£]\d+(?:\.\d+)?[^,.]*/gi, '')
+    .replace(/\d+(?:\.\d+)?\s*(?:hours?|hrs?)/gi, '')
+    .replace(/(?:\+44|0)\d[\d\s]{9,}/g, '')
+    .replace(/\s{2,}/g, ' ').trim();
+  const job_summary = stripForSummary(desc).charAt(0).toUpperCase() + stripForSummary(desc).slice(1, 200);
+
   // ── Customer name ─────────────────────────────────────────────
+  // Handles: "customer name John Smith", "customer is John Smith", "for John Smith"
   let customer_name = '';
   const namePatterns = [
     /customer\s+(?:name\s+is|name|is)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)/i,
@@ -1596,36 +1607,46 @@ function parseJobDescription(desc) {
   const emailMatch = desc.match(/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/);
   if (emailMatch) customer_email = emailMatch[0].toLowerCase();
 
-  // ── Customer phone ────────────────────────────────────────────
-  // Only match with explicit phone/mobile keyword — never match address numbers
+  // ── Customer phone — ONLY match explicit phone keywords ───────
+  // Never match address numbers. Requires phone/mobile/number keyword.
   let customer_phone = '';
-  const phoneKeyMatch = desc.match(
-    /(?:phone(?:\s+number)?|mobile(?:\s+number)?|tel(?:ephone)?|mob|contact(?:\s+(?:number|no|num))?)\s*(?:is|:)?\s*((?:\+44\s*|0)\d[\d\s]{9,10})/i
+  const phoneMatch = desc.match(
+    /(?:phone(?:\s+number)?|mobile(?:\s+number)?|tel(?:ephone)?|contact(?:\s+(?:number|no|num))?)\s*(?:is|:)?\s*((?:\+44\s*|0)\d[\d\s]{9,10})/i
   );
-  if (phoneKeyMatch) {
-    const digits = phoneKeyMatch[1].replace(/\D/g, '');
-    if (digits.length >= 10) customer_phone = digits;
+  if (phoneMatch) {
+    const digits = phoneMatch[1].replace(/\D/g, '');
+    if (digits.length >= 10) customer_phone = digits.startsWith('44') ? '+' + digits : digits;
   }
-  // Fallback: bare 07xxx 11-digit mobile
+  // Fallback: bare 07xxx number that is clearly a mobile and not part of address
   if (!customer_phone) {
-    const mobMatch = desc.match(/\b(07\d{9})\b/);
-    if (mobMatch) customer_phone = mobMatch[1];
+    const mobileMatch = desc.match(/\b(07\d{3}[\s\-]?\d{3}[\s\-]?\d{3,4})\b/);
+    if (mobileMatch) {
+      const digits = mobileMatch[1].replace(/\D/g, '');
+      // Only accept if 11 digits and not immediately preceded by a street number pattern
+      const pos = desc.indexOf(mobileMatch[1]);
+      const before = desc.slice(Math.max(0, pos - 20), pos);
+      if (digits.length === 11 && !/\d+\s+\w+\s*$/.test(before)) {
+        customer_phone = digits;
+      }
+    }
   }
 
-  // ── Address & city ────────────────────────────────────────────
+  // ── Address — ONLY extract after explicit address keywords ────
+  // Never pull digits from phone numbers into address
   let address = '', city = '', postcode = '';
 
+  // Postcode first — easiest to identify
   const postcodeMatch = desc.match(/\b([A-Z]{1,2}\d{1,2}\s*\d[A-Z]{2})\b/i);
-  if (postcodeMatch) postcode = postcodeMatch[1].toUpperCase().replace(/\s+/g, ' ');
+  if (postcodeMatch) postcode = postcodeMatch[1].toUpperCase().replace(/\s+/, ' ');
 
-  // Remove phone digits from desc before address matching
-  const descNoPhone = customer_phone ? desc.replace(/07\d{9}|\d[\d\s]{10,}/, '') : desc;
-  const addrMatch = descNoPhone.match(/(\d{1,4}\s+[A-Za-z][\w\s]{2,25}?(?:street|road|avenue|lane|drive|close|way|place|court|crescent|grove|gardens?|hill|rise|terrace|square))/i);
+  // Address: must have house number + street type word
+  // Strip phone number from desc before matching to avoid digits leaking in
+  const descNoPhone = customer_phone ? desc.replace(customer_phone, '') : desc;
+  const addrMatch = descNoPhone.match(/(\d{1,4}\s+[A-Za-z][\w\s]{2,30}?(?:street|road|avenue|lane|drive|close|way|place|court|crescent|grove|gardens?|hill|rise|terrace|square))/i);
   if (addrMatch) address = addrMatch[1].trim();
 
-  // City — word after address street type, or after comma before postcode
-  const cityMatch = descNoPhone.match(/(?:street|road|avenue|lane|drive|close|way|place|terrace|square)\s+([A-Z][a-z]{2,15})/i)
-    || descNoPhone.match(/,\s*([A-Z][a-z]{2,15})\s*(?:,|$|[A-Z]{1,2}\d)/);
+  // City: look for known city indicators
+  const cityMatch = desc.match(/(?:in|at|,)\s+([A-Z][a-zA-Z]{2,15})(?:\s*,|\s+[A-Z]{1,2}\d|\s*$)/);
   if (cityMatch && !/(street|road|avenue|lane|drive|close)/i.test(cityMatch[1])) {
     city = cityMatch[1].trim();
   }
@@ -1639,114 +1660,73 @@ function parseJobDescription(desc) {
   const rateMatch = d.match(/[£]?(\d+)\s*(?:per\s+hour|p\/h|\/hr|an\s+hour)/i);
   if (rateMatch) hourly_rate = parseFloat(rateMatch[1]);
 
+  // "labour costing £300" / "labour is £300" / "£300 for labour"
   const labourMatch = d.match(/labour\s*(?:costing|costs?|is|at|totalling|of)?\s*[£](\d+(?:\.\d+)?)/i)
     || d.match(/[£](\d+(?:\.\d+)?)\s*(?:for\s+)?labour/i);
   if (labourMatch && !labour_hours) labour_fixed_total = parseFloat(labourMatch[1]);
 
-  // ── Materials — extract each named item with qty and price ────
-  // Known item names — ordered longest first to match most specific first
-  const knownItems = [
-    'consumer unit','light fitting','junction box','distribution board',
-    'socket outlet','double socket','single socket','double socket outlet',
-    'socket','switch','dimmer switch','light switch',
-    'radiator','boiler','thermostat','programmer',
-    'tap','valve','pump','pipe','cable','tile',
-    'plasterboard','tank','cylinder','meter','panel','board','fitting',
-    'door','window','lock','handle','hinge','extractor fan','ceiling fan',
-    'shower','bath','toilet','sink','basin'
-  ];
+  // ── Materials — item by item extraction ──────────────────────
+  // Strategy: scan the description for patterns like:
+  // "2 switches costing £65 each"
+  // "consumer unit costing £100"
+  // "install a consumer unit at £100"
+  // Uses broad matching then cleans up names properly
 
   const materials_needed = [];
-  const usedRanges = []; // track char positions already matched
+  const seen = new Set();
 
-  knownItems.forEach(item => {
-    const escaped = item.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // Pattern: [qty] [item name] [costing/at/for] [£price] [each/per unit]
+  // Broad item capture — grab the words between qty and price keyword
+  const itemPattern = /(?:(\d+)\s+)?([a-z][a-z\s]{2,30}?)\s+(?:costing|costs?|at|priced?\s+at|for|is|@)\s*[£](\d+(?:\.\d+)?)\s*(?:each|per\s+unit|a\s+piece|apiece)?/gi;
 
-    // Pattern 1: "2 consumer units costing £65 each"
-    const p1 = new RegExp(
-      '(\\d+)\\s+' + escaped + 's?\\s*(?:costing|costs?|at|@|priced?\\s+at)?\\s*[£](\\d+(?:\\.\\d+)?)\\s*(?:each|per\\s+unit|a\\s+piece)?',
-      'gi'
-    );
-    // Pattern 2: "consumer unit costing £100" (no qty)
-    const p2 = new RegExp(
-      '(?<!\\d\\s)' + escaped + 's?\\s*(?:costing|costs?|at|@|is|priced?\\s+at)\\s*[£](\\d+(?:\\.\\d+)?)\\s*(?:each|per\\s+unit)?',
-      'gi'
-    );
-    // Pattern 3: qty only, no price
-    const p3 = new RegExp('(\\d+)\\s+' + escaped + 's?(?!\\s*[£\\d])', 'gi');
+  let match;
+  while ((match = itemPattern.exec(d)) !== null) {
+    const qty = parseInt(match[1]) || 1;
+    let name = match[2].trim();
+    const unitPrice = parseFloat(match[3]);
 
+    // Clean up name — remove leading noise words
+    name = name.replace(/^(?:a|an|the|and|customer\s+requires?|install\s+of|install|supply\s+and\s+fit|supply|fit|of|requires?)\s+/gi, '').trim();
+
+    // Skip if it looks like labour, or name is too short/vague
+    if (/labour|labor/i.test(name)) continue;
+    if (name.length < 3) continue;
+
+    // Capitalise properly
+    name = name.charAt(0).toUpperCase() + name.slice(1);
+    const key = name.toLowerCase() + qty;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    materials_needed.push({ name, qty, unitPrice });
+  }
+
+  // Also catch items mentioned with qty but no price
+  const qtyOnlyPattern = /(\d+)\s+(consumer\s+unit|socket|switch|tap|radiator|boiler|light\s+fitting|valve|pump|thermostat|cable|pipe|tile)s?/gi;
+  while ((match = qtyOnlyPattern.exec(d)) !== null) {
+    const qty = parseInt(match[1]);
+    const rawName = match[2].trim();
+    const name = rawName.charAt(0).toUpperCase() + rawName.slice(1);
+    const key = name.toLowerCase() + qty;
+    if (!seen.has(key)) {
+      seen.add(key);
+      materials_needed.push({ name, qty, unitPrice: 0 });
+    }
+  }
+
+  // ── Tasks — description only, no pricing ─────────────────────
+  const tasks = [];
+  const taskPatterns = [
+    /(?:install(?:ation)?\s+of|fit(?:ting)?|replace?(?:ment)?\s+of|repair\s+of)\s+([a-z][a-z\s]{3,50})/gi,
+  ];
+  taskPatterns.forEach(re => {
     let m;
-    const resetPatterns = () => { p1.lastIndex = 0; p2.lastIndex = 0; p3.lastIndex = 0; };
-    resetPatterns();
-
-    if ((m = p1.exec(d)) !== null) {
-      materials_needed.push({
-        name: item.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
-        qty: parseInt(m[1]),
-        unitPrice: parseFloat(m[2])
-      });
-      return;
-    }
-    resetPatterns();
-    if ((m = p2.exec(d)) !== null) {
-      materials_needed.push({
-        name: item.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
-        qty: 1,
-        unitPrice: parseFloat(m[1])
-      });
-      return;
-    }
-    resetPatterns();
-    if ((m = p3.exec(d)) !== null) {
-      materials_needed.push({
-        name: item.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
-        qty: parseInt(m[1]),
-        unitPrice: 0
-      });
+    while ((m = re.exec(d)) !== null) {
+      let clean = m[1].replace(/[£$]?\d+(?:\.\d+)?[^,]*/g, '').replace(/\s{2,}/g, ' ').trim();
+      clean = clean.charAt(0).toUpperCase() + clean.slice(1, 60);
+      if (clean.length > 4 && !tasks.includes(clean)) tasks.push(clean);
     }
   });
-
-  // Deduplicate — if a specific item (e.g. "double socket") and generic (e.g. "socket") both matched, keep specific
-  const deduped = materials_needed.filter((m, i) =>
-    !materials_needed.some((other, j) => j !== i
-      && other.name.toLowerCase().includes(m.name.toLowerCase())
-      && other.name.length > m.name.length)
-  );
-
-  // ── Tasks ─────────────────────────────────────────────────────
-  const tasks = [];
-  const taskRe = /(?:install(?:ation)?\s+of|fit(?:ting)?\s+(?:a\s+|an\s+)?|replac(?:e|ing)\s+(?:a\s+|an\s+)?|repair(?:ing)?\s+(?:a\s+|an\s+)?)([a-z][a-z\s]{3,40}?)(?:\s+costing|\s+at\s+[£]|,|$)/gi;
-  let tm;
-  while ((tm = taskRe.exec(d)) !== null) {
-    let clean = tm[1].replace(/\s{2,}/g, ' ').trim();
-    clean = clean.charAt(0).toUpperCase() + clean.slice(1, 60);
-    if (clean.length > 4 && !tasks.find(t => t.toLowerCase() === clean.toLowerCase())) tasks.push(clean);
-  }
-
-  // ── Job summary — built cleanly from detected materials and tasks ─
-  let job_summary = '';
-  if (deduped.length > 0 || tasks.length > 0) {
-    // Build summary from what we actually detected
-    const parts = [];
-    if (tasks.length > 0) parts.push(...tasks.slice(0, 3));
-    else if (deduped.length > 0) {
-      const itemNames = deduped.map(m => m.qty > 1 ? m.qty + 'x ' + m.name : m.name);
-      parts.push('Supply and fit: ' + itemNames.join(', '));
-    }
-    job_summary = parts.join('. ');
-  } else {
-    // Fallback: clean the raw description
-    job_summary = desc
-      .replace(/customer\s+(?:name|is|phone|mobile|number|email|address|requires?|wants?)\b[^,.]*/gi, '')
-      .replace(/,?\s*(?:labour|materials?)\s*(?:costing|is|at)?\s*[£]\d+[^,]*/gi, '')
-      .replace(/,?\s*[£]\d+(?:\.\d+)?\s*(?:each)?/gi, '')
-      .replace(/mobile\s*\d+/gi, '')
-      .replace(/\d{11}/g, '')
-      .replace(/,\s*,+/g, ',')
-      .replace(/^[,\s]+|[,\s]+$/g, '')
-      .replace(/\s{2,}/g, ' ').trim();
-  }
-  job_summary = (job_summary.charAt(0).toUpperCase() + job_summary.slice(1)).slice(0, 200);
 
   // ── Urgency ───────────────────────────────────────────────────
   let urgency = 'Standard';
@@ -1772,7 +1752,7 @@ function parseJobDescription(desc) {
 
   return {
     trade_type, job_summary, customer_name, customer_email, customer_phone,
-    address, city, postcode, tasks, materials_needed: deduped,
+    address, city, postcode, tasks, materials_needed,
     labour_hours, hourly_rate, labour_fixed_total, materials_cost: 0,
     urgency, assumptions, missing_information, confidence_score: score
   };
