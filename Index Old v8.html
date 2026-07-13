@@ -664,27 +664,25 @@
       </div>
     </div>
 
-    <!-- Tasks: Fix 3 — no pricing here, description only -->
+    <!-- Tasks -->
     <div class="schema-field">
-      <label>Tasks <span style="color:var(--muted);font-size:10px">(what needs doing)</span></label>
-      <div id="s_tasks_list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px"></div>
+      <label>Tasks</label>
+      <div class="tags" id="s_tasks_tags"></div>
       <div class="tag-input-row">
-        <input type="text" id="s_tasks_input" placeholder="Add a task..." onkeydown="if(event.key==='Enter'){event.preventDefault();addTaskItem()}">
-        <button class="btn-voice" onclick="voiceAddTask()" id="voice_tasks">🎙</button>
-        <button onclick="addTaskItem()">+ Add</button>
+        <input type="text" id="s_tasks_input" placeholder="Add a task..." onkeydown="if(event.key==='Enter'){event.preventDefault();addTag('tasks')}">
+        <button class="btn-voice" onclick="voiceAddTag('tasks')" id="voice_tasks">🎙</button>
+        <button onclick="addTag('tasks')">+ Add</button>
       </div>
     </div>
 
-    <!-- Materials: Fix 4 — each item has qty + unit price -->
+    <!-- Materials -->
     <div class="schema-field">
-      <label>Materials & Items <span style="color:var(--muted);font-size:10px">(with pricing)</span></label>
-      <div id="s_materials_list" style="margin-bottom:8px"></div>
-      <div class="tag-input-row" style="flex-wrap:wrap;gap:6px">
-        <input type="text" id="s_mat_name" placeholder="Item name..." style="flex:2;min-width:120px">
-        <input type="number" id="s_mat_qty" placeholder="Qty" min="1" step="1" style="width:60px;flex:none">
-        <input type="number" id="s_mat_price" placeholder="£ each" min="0" step="0.01" style="width:80px;flex:none">
-        <button class="btn-voice" onclick="voiceAddMaterial()" id="voice_materials">🎙</button>
-        <button onclick="addMaterialItem()" style="white-space:nowrap">+ Add</button>
+      <label>Materials Needed</label>
+      <div class="tags" id="s_materials_tags"></div>
+      <div class="tag-input-row">
+        <input type="text" id="s_materials_input" placeholder="Add a material..." onkeydown="if(event.key==='Enter'){event.preventDefault();addTag('materials')}">
+        <button class="btn-voice" onclick="voiceAddTag('materials')" id="voice_materials">🎙</button>
+        <button onclick="addTag('materials')">+ Add</button>
       </div>
     </div>
 
@@ -702,65 +700,6 @@
     <div class="schema-field">
       <label>Missing Information <span style="color:var(--red);font-size:10px">(fill these in)</span></label>
       <div class="tags" id="s_missing_tags"></div>
-    </div>
-
-    <!-- VAT toggle -->
-    <div class="schema-field">
-      <label>VAT</label>
-      <div class="labour-toggle">
-        <button id="vatStandard" class="active" onclick="setVatMode('standard')">VAT 20%</button>
-        <button id="vatExempt" onclick="setVatMode('exempt')">VAT Exempt</button>
-        <button id="vatCustom" onclick="setVatMode('custom')">Custom %</button>
-      </div>
-      <div id="vatCustomSection" class="hidden" style="margin-top:8px">
-        <label style="font-size:10px;color:var(--muted);display:block;margin-bottom:4px">VAT Rate (%)</label>
-        <input type="number" id="s_vat_rate" value="20" min="0" max="100" step="0.5">
-      </div>
-    </div>
-
-    <!-- Quote validity -->
-    <div class="schema-field">
-      <label>Quote Valid Until</label>
-      <input type="date" id="s_valid_until">
-    </div>
-
-    <!-- Terms & Conditions -->
-    <div class="schema-field">
-      <label>Payment Terms</label>
-      <div class="field-with-voice">
-        <input type="text" id="s_payment_terms" placeholder="e.g. Payment due within 14 days of completion">
-        <button class="btn-voice" onclick="voiceIntoField('s_payment_terms')" id="voice_s_payment_terms">🎙</button>
-      </div>
-    </div>
-
-    <div class="schema-field">
-      <label>Workmanship Guarantee</label>
-      <div class="field-with-voice">
-        <input type="text" id="s_guarantee" placeholder="e.g. All workmanship carries a 12-month guarantee">
-        <button class="btn-voice" onclick="voiceIntoField('s_guarantee')" id="voice_s_guarantee">🎙</button>
-      </div>
-    </div>
-
-    <div class="schema-field">
-      <label>Notes to Customer <span style="color:var(--muted);font-size:10px">(optional)</span></label>
-      <div class="field-with-voice">
-        <textarea id="s_customer_notes" rows="2" placeholder="e.g. Please ensure access is available on the day"></textarea>
-        <button class="btn-voice" onclick="voiceIntoField('s_customer_notes')" id="voice_s_customer_notes">🎙</button>
-      </div>
-    </div>
-
-    <!-- Deposit -->
-    <div class="schema-field">
-      <label>Deposit Required <span style="color:var(--muted);font-size:10px">(optional)</span></label>
-      <div class="labour-toggle">
-        <button id="depositNone" class="active" onclick="setDepositMode('none')">No Deposit</button>
-        <button id="depositPct" onclick="setDepositMode('percent')">% of Total</button>
-        <button id="depositFixed" onclick="setDepositMode('fixed')">Fixed Amount</button>
-      </div>
-      <div id="depositSection" class="hidden" style="margin-top:8px">
-        <input type="number" id="s_deposit_value" placeholder="e.g. 50" min="0" step="1">
-        <div style="font-size:11px;color:var(--muted);margin-top:4px" id="depositHint"></div>
-      </div>
     </div>
 
     <!-- Confidence -->
@@ -843,139 +782,15 @@ function setLabourMode(mode) {
   document.getElementById('labourTotalSection').classList.toggle('hidden', mode !== 'total');
 }
 
-// ─── Data stores ─────────────────────────────────────────────────
-// tasks: [{desc}]
-// materials: [{name, qty, unitPrice}]
-// assumptions/missing: [string]
-const taskItems = [];
-const materialItems = [];
-const tagData = { assumptions: [], missing: [] };
+// ─── Tag helpers ─────────────────────────────────────────────────
+const tagData = { tasks: [], materials: [], assumptions: [], missing: [] };
 
-// ─── Task helpers ────────────────────────────────────────────────
-function renderTasks() {
-  const list = document.getElementById('s_tasks_list');
-  if (!list) return;
-  list.innerHTML = '';
-  taskItems.forEach((t, i) => {
-    const row = document.createElement('div');
-    row.style.cssText = 'display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 10px;';
-    row.innerHTML = `
-      <span style="flex:1;font-size:13px">${t.desc}</span>
-      <span onclick="removeTask(${i})" style="cursor:pointer;color:var(--muted);font-size:18px;line-height:1">×</span>`;
-    list.appendChild(row);
-  });
-}
-
-function addTaskItem() {
-  const input = document.getElementById('s_tasks_input');
-  // Fix 3: strip any pricing from task descriptions
-  const raw = input.value.trim();
-  const clean = raw.replace(/[£$]?\d+(?:\.\d+)?\s*(?:each|per\s+unit|total)?/gi,'').replace(/\s{2,}/g,' ').trim();
-  if (!clean) return;
-  taskItems.push({ desc: clean });
-  renderTasks();
-  input.value = '';
-}
-
-function removeTask(i) {
-  taskItems.splice(i, 1);
-  renderTasks();
-}
-
-function voiceAddTask() {
-  voiceIntoFieldThen('s_tasks_input', () => addTaskItem());
-}
-
-// ─── Material helpers ─────────────────────────────────────────────
-function renderMaterials() {
-  const list = document.getElementById('s_materials_list');
-  if (!list) return;
-  list.innerHTML = '';
-  if (materialItems.length === 0) {
-    list.innerHTML = '<div style="font-size:12px;color:var(--muted);padding:4px 0">No materials added yet.</div>';
-    return;
-  }
-  materialItems.forEach((m, i) => {
-    const total = (m.qty * m.unitPrice).toFixed(2);
-    const row = document.createElement('div');
-    row.style.cssText = 'display:grid;grid-template-columns:1fr 60px 80px 80px 24px;gap:6px;align-items:center;margin-bottom:6px;';
-    row.innerHTML = `
-      <input type="text" value="${m.name}" onchange="materialItems[${i}].name=this.value"
-        style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 9px;font-size:12px;color:var(--text);outline:none">
-      <input type="number" value="${m.qty}" min="1" step="1" onchange="materialItems[${i}].qty=parseFloat(this.value)||1;renderMaterials()"
-        style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 6px;font-size:12px;color:var(--text);outline:none;text-align:center">
-      <input type="number" value="${m.unitPrice||''}" min="0" step="0.01" placeholder="£ each"
-        onchange="materialItems[${i}].unitPrice=parseFloat(this.value)||0;renderMaterials()"
-        style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:7px 6px;font-size:12px;color:var(--text);outline:none;text-align:right">
-      <div style="font-size:12px;color:var(--muted);text-align:right;font-weight:600">${m.unitPrice>0?'£'+total:'TBC'}</div>
-      <span onclick="removeMaterial(${i})" style="cursor:pointer;color:var(--muted);font-size:18px;text-align:center">×</span>`;
-    list.appendChild(row);
-  });
-  // Header labels
-  const header = document.createElement('div');
-  header.style.cssText = 'display:grid;grid-template-columns:1fr 60px 80px 80px 24px;gap:6px;margin-bottom:4px;';
-  header.innerHTML = `
-    <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.8px">Item</div>
-    <div style="font-size:10px;color:var(--muted);text-align:center">Qty</div>
-    <div style="font-size:10px;color:var(--muted);text-align:right">Unit £</div>
-    <div style="font-size:10px;color:var(--muted);text-align:right">Total</div>
-    <div></div>`;
-  list.insertBefore(header, list.firstChild);
-}
-
-function addMaterialItem() {
-  const name = document.getElementById('s_mat_name').value.trim();
-  const qty = parseFloat(document.getElementById('s_mat_qty').value) || 1;
-  const unitPrice = parseFloat(document.getElementById('s_mat_price').value) || 0;
-  if (!name) return;
-  materialItems.push({ name, qty, unitPrice });
-  renderMaterials();
-  document.getElementById('s_mat_name').value = '';
-  document.getElementById('s_mat_qty').value = '';
-  document.getElementById('s_mat_price').value = '';
-}
-
-function removeMaterial(i) {
-  materialItems.splice(i, 1);
-  renderMaterials();
-}
-
-function voiceAddMaterial() {
-  voiceIntoFieldThen('s_mat_name', () => {
-    document.getElementById('s_mat_qty').focus();
-  });
-}
-
-// Helper: voice into a field then run a callback on end
-function voiceIntoFieldThen(fieldId, callback) {
-  if (!SR) return;
-  const btn = document.getElementById('voice_' + fieldId.replace('s_mat_name','materials').replace('s_tasks_input','tasks'));
-  if (fieldRecognition) { fieldRecognition.stop(); fieldRecognition = null; }
-  fieldRecognition = new SR();
-  fieldRecognition.continuous = false;
-  fieldRecognition.interimResults = false;
-  fieldRecognition.lang = 'en-GB';
-  if (btn) { btn.textContent = '⏹'; btn.classList.add('listening'); }
-  fieldRecognition.onresult = (e) => {
-    const result = e.results[0][0].transcript;
-    document.getElementById(fieldId).value = cleanForField(result, fieldId);
-  };
-  fieldRecognition.onend = () => {
-    fieldRecognition = null;
-    if (btn) { btn.textContent = '🎙'; btn.classList.remove('listening'); }
-    if (callback) callback();
-  };
-  fieldRecognition.onerror = () => { fieldRecognition = null; if (btn) { btn.textContent = '🎙'; btn.classList.remove('listening'); } };
-  fieldRecognition.start();
-}
-
-// ─── Assumption/missing tag helpers ──────────────────────────────
 function renderTags(type) {
   const container = document.getElementById('s_' + type + '_tags');
   if (!container) return;
   container.innerHTML = '';
   tagData[type].forEach((val, i) => {
-    const cls = type === 'missing' ? 'tag red' : 'tag yellow';
+    const cls = type === 'missing' ? 'tag red' : type === 'assumptions' ? 'tag yellow' : 'tag';
     const removeBtn = type === 'missing' ? '' : `<span class="remove" onclick="removeTag('${type}',${i})">×</span>`;
     const div = document.createElement('div');
     div.className = cls;
@@ -996,41 +811,6 @@ function addTag(type) {
 function removeTag(type, index) {
   tagData[type].splice(index, 1);
   renderTags(type);
-}
-
-// ─── VAT mode ─────────────────────────────────────────────────────
-let vatMode = 'standard';
-function setVatMode(mode) {
-  vatMode = mode;
-  document.getElementById('vatStandard').classList.toggle('active', mode === 'standard');
-  document.getElementById('vatExempt').classList.toggle('active', mode === 'exempt');
-  document.getElementById('vatCustom').classList.toggle('active', mode === 'custom');
-  document.getElementById('vatCustomSection').classList.toggle('hidden', mode !== 'custom');
-}
-
-function getVatRate() {
-  if (vatMode === 'exempt') return 0;
-  if (vatMode === 'custom') return parseFloat(document.getElementById('s_vat_rate').value) || 0;
-  return 20;
-}
-
-// ─── Deposit mode ─────────────────────────────────────────────────
-let depositMode = 'none';
-function setDepositMode(mode) {
-  depositMode = mode;
-  document.getElementById('depositNone').classList.toggle('active', mode === 'none');
-  document.getElementById('depositPct').classList.toggle('active', mode === 'percent');
-  document.getElementById('depositFixed').classList.toggle('active', mode === 'fixed');
-  const section = document.getElementById('depositSection');
-  const hint = document.getElementById('depositHint');
-  section.classList.toggle('hidden', mode === 'none');
-  if (mode === 'percent') {
-    document.getElementById('s_deposit_value').placeholder = 'e.g. 50 (%)';
-    hint.textContent = 'Enter percentage of total quote e.g. 50 for 50%';
-  } else if (mode === 'fixed') {
-    document.getElementById('s_deposit_value').placeholder = 'e.g. 150 (£)';
-    hint.textContent = 'Enter fixed deposit amount in £';
-  }
 }
 
 // ─── Clean spoken text for specific field types ──────────────────
@@ -1105,9 +885,6 @@ function cleanForField(text, fieldId) {
     if (!t.startsWith('GB') && /\d/.test(t)) t = 'GB' + t.replace(/[^0-9]/g, '');
     return t;
   }
-
-  // Fix 5: Fix £ sign being transcribed as "lb" or "pound"
-  t = t.replace(/lb/gi, '£').replace(/pounds?/gi, '£').replace(/quid/gi, '£');
 
   // Default
   return t.charAt(0).toUpperCase() + t.slice(1);
@@ -1353,8 +1130,6 @@ function startMainRecording() {
 }
 
 function restartMobileMain() {
-  // Fix 6: shorter delay = less noticeable gap between sessions on mobile
-  // This makes pauses feel natural rather than like it stopped recording
   setTimeout(() => {
     if (!isRecording) return;
     try {
@@ -1371,32 +1146,22 @@ function restartMobileMain() {
           if (e.results[i].isFinal) sessionResult += e.results[i][0].transcript + ' ';
           else interim += e.results[i][0].transcript;
         }
-        // Only update finalTranscript if we got something new
-        if (sessionResult.trim()) finalTranscript = sessionResult;
+        finalTranscript = sessionResult;
         updateLiveDisplay(sessionTranscript + finalTranscript, interim);
       };
       mainRecognition.onerror = (e) => {
-        // Fix 6: ignore no-speech and aborted — just restart silently
-        if (e.error === 'no-speech' || e.error === 'aborted' || e.error === 'network') {
-          if (isRecording) restartMobileMain();
-          return;
-        }
+        if (e.error === 'no-speech' || e.error === 'aborted') return;
         stopMainRecording();
       };
       mainRecognition.onend = () => {
         if (!isRecording) return;
-        // Accumulate confirmed text into sessionTranscript before next session
-        const confirmed = transcriptBox.value.trim();
-        if (confirmed) sessionTranscript = confirmed + ' ';
+        sessionTranscript = transcriptBox.value.trim() + ' ';
         finalTranscript = '';
         restartMobileMain();
       };
       mainRecognition.start();
-    } catch(err) {
-      // Brief pause then retry rather than stopping completely
-      if (isRecording) setTimeout(restartMobileMain, 500);
-    }
-  }, 100);
+    } catch(err) { stopMainRecording(); }
+  }, 250);
 }
 
 function stopMainRecording() {
@@ -1458,44 +1223,15 @@ function populateSchema(s) {
     if (s.hourly_rate) document.getElementById('s_hourly_rate').value = s.hourly_rate;
   }
 
-  // Populate tasks (no pricing — Fix 3)
-  taskItems.length = 0;
-  (s.tasks || []).forEach(desc => taskItems.push({ desc }));
-  renderTasks();
-
-  // Populate materials with qty/price structure (Fix 4)
-  materialItems.length = 0;
-  (s.materials_needed || []).forEach(name => {
-    // Fix 7: parse quantity if mentioned e.g. "2 sockets"
-    const qtyMatch = name.match(/^(\d+)\s+(.+)/);
-    if (qtyMatch) {
-      materialItems.push({ name: qtyMatch[2], qty: parseInt(qtyMatch[1]), unitPrice: 0 });
-    } else {
-      materialItems.push({ name, qty: 1, unitPrice: 0 });
-    }
-  });
-  // If a global materials cost was detected, spread it evenly as a hint
-  if (s.materials_cost && materialItems.length > 0) {
-    const perItem = parseFloat((s.materials_cost / materialItems.length).toFixed(2));
-    materialItems.forEach(m => m.unitPrice = perItem);
-  } else if (s.materials_cost && materialItems.length === 0) {
-    materialItems.push({ name: 'Materials & Parts', qty: 1, unitPrice: s.materials_cost });
-  }
-  renderMaterials();
-
+  tagData.tasks = s.tasks || [];
+  tagData.materials = s.materials_needed || [];
   tagData.assumptions = s.assumptions || [];
   tagData.missing = s.missing_information || [];
-  ['assumptions','missing'].forEach(renderTags);
 
-  // Set validity date to 30 days from now
-  const validDate = new Date();
-  validDate.setDate(validDate.getDate() + 30);
-  document.getElementById('s_valid_until').value = validDate.toISOString().split('T')[0];
+  ['tasks','materials','assumptions','missing'].forEach(renderTags);
 
-  // Set default terms and guarantee
-  document.getElementById('s_payment_terms').value = 'Payment due within 14 days of completion';
-  document.getElementById('s_guarantee').value = 'All workmanship carries a 12-month guarantee';
-  document.getElementById('s_customer_notes').value = '';
+  // Store detected materials cost globally so generateQuote can use it
+  window._detectedMatCost = s.materials_cost || 0;
 
   const score = s.confidence_score || 0;
   const fill = document.getElementById('confidenceFill');
@@ -1616,25 +1352,14 @@ function parseJobDescription(desc) {
   const tasks = [];
   taskPatterns.forEach(re => {
     (desc.match(re) || []).forEach(m => {
-      // Fix 3: strip pricing from task descriptions in parser output
-      let clean = m.replace(/,.*$/,'').trim().slice(0, 80);
-      clean = clean.replace(/[£$]?\d+(?:\.\d+)?\s*(?:each|per\s+unit|total|pounds?)?/gi,'').replace(/\s{2,}/g,' ').trim();
+      const clean = m.replace(/,.*$/,'').trim().slice(0, 60);
       if (clean.length > 4 && !tasks.includes(clean)) tasks.push(clean);
     });
   });
 
   // Materials
-  // Fix 7: detect materials with quantities e.g. "2 sockets", "3 radiators"
-  const materialWords = ['consumer unit','socket','cable','pipe','boiler','radiator','tap','tile','plasterboard','light fitting','switch','valve','pump','thermostat','tank','unit'];
-  const materials_needed = [];
-  materialWords.forEach(mat => {
-    const qtyMatch = d.match(new RegExp('(\\d+)\\s+' + mat + 's?', 'i'));
-    if (qtyMatch) {
-      materials_needed.push(qtyMatch[1] + ' ' + mat.charAt(0).toUpperCase() + mat.slice(1));
-    } else if (d.includes(mat)) {
-      materials_needed.push(mat.charAt(0).toUpperCase() + mat.slice(1));
-    }
-  });
+  const materialWords = ['consumer unit','socket','cable','pipe','boiler','radiator','tap','tile','plasterboard','light fitting','switch','valve','pump','thermostat','tank'];
+  const materials_needed = materialWords.filter(m => d.includes(m)).map(m => m.charAt(0).toUpperCase() + m.slice(1));
 
   // Urgency
   let urgency = 'Standard';
@@ -1689,30 +1414,15 @@ function goBackToReview() {
       document.getElementById('s_hourly_rate').value = s.hourly_rate || '';
     }
 
-    // Restore tasks
-    taskItems.length = 0;
-    (s.tasks || []).forEach(t => taskItems.push({...t}));
-    renderTasks();
-
-    // Restore materials
-    materialItems.length = 0;
-    (s.materials || []).forEach(m => materialItems.push({...m}));
-    renderMaterials();
-
-    // Restore assumptions/missing
+    // Tags
+    tagData.tasks = s.tasks || [];
+    tagData.materials = s.materials || [];
     tagData.assumptions = s.assumptions || [];
     tagData.missing = s.missing || [];
-    ['assumptions','missing'].forEach(renderTags);
+    ['tasks','materials','assumptions','missing'].forEach(renderTags);
 
-    // Restore VAT, dates, terms, deposit
-    setVatMode(s.vatMode || 'standard');
-    if (s.vat_rate) document.getElementById('s_vat_rate').value = s.vat_rate;
-    if (s.valid_until) document.getElementById('s_valid_until').value = s.valid_until;
-    if (s.payment_terms) document.getElementById('s_payment_terms').value = s.payment_terms;
-    if (s.guarantee) document.getElementById('s_guarantee').value = s.guarantee;
-    if (s.customer_notes) document.getElementById('s_customer_notes').value = s.customer_notes;
-    setDepositMode(s.depositMode || 'none');
-    if (s.deposit_value) document.getElementById('s_deposit_value').value = s.deposit_value;
+    // Restore materials cost
+    window._detectedMatCost = s.matCost || 0;
   }
 
   setStep(3);
@@ -1746,30 +1456,23 @@ function generateQuote() {
 
   // Save all Review screen values so Edit Quote can restore them exactly
   savedQuoteState = {
-    trade_type:      document.getElementById('s_trade_type').value,
-    job_summary:     document.getElementById('s_job_summary').value,
-    customer_name:   document.getElementById('s_customer_name').value,
-    customer_phone:  document.getElementById('s_customer_phone').value,
-    address:         document.getElementById('s_address').value,
-    city:            document.getElementById('s_city').value,
-    postcode:        document.getElementById('s_postcode').value,
-    urgency:         document.getElementById('s_urgency').value,
-    labourMode:      labourMode,
-    labour_hours:    document.getElementById('s_labour_hours').value,
-    hourly_rate:     document.getElementById('s_hourly_rate').value,
-    labour_total:    document.getElementById('s_labour_total').value,
-    vatMode:         vatMode,
-    vat_rate:        document.getElementById('s_vat_rate').value,
-    valid_until:     document.getElementById('s_valid_until').value,
-    payment_terms:   document.getElementById('s_payment_terms').value,
-    guarantee:       document.getElementById('s_guarantee').value,
-    customer_notes:  document.getElementById('s_customer_notes').value,
-    depositMode:     depositMode,
-    deposit_value:   document.getElementById('s_deposit_value').value,
-    tasks:           taskItems.map(t => ({...t})),
-    materials:       materialItems.map(m => ({...m})),
-    assumptions:     [...tagData.assumptions],
-    missing:         [...tagData.missing],
+    trade_type:    document.getElementById('s_trade_type').value,
+    job_summary:   document.getElementById('s_job_summary').value,
+    customer_name: document.getElementById('s_customer_name').value,
+    customer_phone:document.getElementById('s_customer_phone').value,
+    address:       document.getElementById('s_address').value,
+    city:          document.getElementById('s_city').value,
+    postcode:      document.getElementById('s_postcode').value,
+    urgency:       document.getElementById('s_urgency').value,
+    labourMode:    labourMode,
+    labour_hours:  document.getElementById('s_labour_hours').value,
+    hourly_rate:   document.getElementById('s_hourly_rate').value,
+    labour_total:  document.getElementById('s_labour_total').value,
+    tasks:         [...tagData.tasks],
+    materials:     [...tagData.materials],
+    assumptions:   [...tagData.assumptions],
+    missing:       [...tagData.missing],
+    matCost:       window._detectedMatCost || 0,
   };
 
   // Read labour values directly from whichever mode is active
@@ -1805,6 +1508,7 @@ function generateQuote() {
 
   const today = new Date();
   const dateStr = today.toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric' });
+  const validUntil = new Date(new Date().setDate(today.getDate()+30)).toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric' });
   // Sequential quote numbering — stored in localStorage until Step 4 (database)
   // If editing an existing quote, reuse its number rather than incrementing
   // When we move to Step 4 this gets replaced with an API call
@@ -1825,65 +1529,34 @@ function generateQuote() {
     lineItems.push({ description: 'Labour — ' + tradeType, qty: labourHours, unit: 'hrs', unitPrice: 0, total: 0, note: 'Rate TBC' });
   }
 
-  // Fix 2 & 7: Materials from materialItems with qty x unitPrice breakdown
-  materialItems.forEach(m => {
-    const total = m.qty * m.unitPrice;
-    lineItems.push({
-      description: m.name,
-      qty: m.qty,
-      unit: m.qty > 1 ? 'units' : 'item',
-      unitPrice: m.unitPrice,
-      total: total,
-      note: m.unitPrice === 0 ? 'TBC' : null
+  // Materials — use spoken cost if available, otherwise list as TBC
+  if (matCost > 0) {
+    lineItems.push({ description: 'Materials & Parts', qty: 1, unit: 'item', unitPrice: matCost, total: matCost });
+  } else if (tagData.materials.length > 0) {
+    tagData.materials.forEach(mat => {
+      lineItems.push({ description: 'Supply & fit: ' + mat, qty: 1, unit: 'item', unitPrice: 0, total: 0, note: 'TBC' });
     });
-  });
+  }
 
   // Urgency surcharge
-  const urgency = document.getElementById('s_urgency').value;
-  if (urgency === 'Urgent' || urgency === 'Emergency') {
+  if (document.getElementById('s_urgency').value === 'Urgent' || document.getElementById('s_urgency').value === 'Emergency') {
     lineItems.push({ description: 'Emergency call-out charge', qty: 1, unit: 'item', unitPrice: 75, total: 75 });
   }
 
-  // Fix 1: VAT calculation
-  const vatRate = getVatRate();
   const subtotal = lineItems.reduce((a, i) => a + i.total, 0);
-  const vatAmount = parseFloat((subtotal * vatRate / 100).toFixed(2));
+  const vatAmount = parseFloat((subtotal * 0.2).toFixed(2));
   const grandTotal = parseFloat((subtotal + vatAmount).toFixed(2));
 
-  // Fix 8: validity date from picker
-  const validUntilRaw = document.getElementById('s_valid_until').value;
-  const validUntil = validUntilRaw
-    ? new Date(validUntilRaw).toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric' })
-    : new Date(new Date().setDate(new Date().getDate()+30)).toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric' });
-
-  // Fix 9: custom terms
-  const paymentTerms = document.getElementById('s_payment_terms').value.trim() || 'Payment due within 14 days of completion';
-  const guarantee = document.getElementById('s_guarantee').value.trim() || 'All workmanship carries a 12-month guarantee';
-  const customerNotes = document.getElementById('s_customer_notes').value.trim();
-
-  // Deposit calculation
-  const depositVal = parseFloat(document.getElementById('s_deposit_value').value) || 0;
-  let depositAmount = 0;
-  let depositLine = '';
-  if (depositMode === 'percent' && depositVal > 0) {
-    depositAmount = parseFloat((grandTotal * depositVal / 100).toFixed(2));
-    depositLine = `<div style="margin-top:10px;padding:10px 14px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;font-size:13px;color:#c2410c"><strong>Deposit Required:</strong> ${depositVal}% upfront = £${depositAmount.toFixed(2)}</div>`;
-  } else if (depositMode === 'fixed' && depositVal > 0) {
-    depositAmount = depositVal;
-    depositLine = `<div style="margin-top:10px;padding:10px 14px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;font-size:13px;color:#c2410c"><strong>Deposit Required:</strong> £${depositAmount.toFixed(2)} upfront</div>`;
-  }
-
-  const fmt = n => '£' + Number(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  const fmtOrTBC = (n, note) => (note === 'TBC' || n === 0 && note) ? '<span style="color:#94a3b8">TBC</span>' : fmt(n);
+  const fmt = n => n === 0 ? 'TBC' : '£' + Number(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 
   const bizAddress = [biz.addr1, biz.city, biz.postcode].filter(Boolean).join(', ');
 
   const rows = lineItems.map(i => `
     <tr>
-      <td>${i.description}</td>
+      <td>${i.description}${i.note ? ' <span style="color:#94a3b8;font-size:11px">('+i.note+')</span>' : ''}</td>
       <td style="text-align:center">${i.qty} ${i.unit}</td>
-      <td style="text-align:right">${fmtOrTBC(i.unitPrice, i.note)}</td>
-      <td style="text-align:right">${fmtOrTBC(i.total, i.note)}</td>
+      <td style="text-align:right">${i.unitPrice === 0 && i.note ? 'TBC' : fmt(i.unitPrice)}</td>
+      <td style="text-align:right">${i.total === 0 && i.note ? 'TBC' : fmt(i.total)}</td>
     </tr>`).join('');
 
   document.getElementById('quoteContent').innerHTML = `
@@ -1928,17 +1601,13 @@ function generateQuote() {
 
     <div class="totals-block">
       <div class="total-row"><span>Subtotal</span><span>${fmt(subtotal)}</span></div>
-      ${vatRate === 0 ? '<div class="total-row"><span>VAT</span><span style="color:#94a3b8">Exempt</span></div>' : `<div class="total-row"><span>VAT (${vatRate}%)</span><span>${fmt(vatAmount)}</span></div>`}
+      <div class="total-row"><span>VAT (20%)</span><span>${fmt(vatAmount)}</span></div>
       <div class="total-row grand"><span>Total</span><span>${fmt(grandTotal)}</span></div>
     </div>
 
-    ${depositLine}
-
-    ${customerNotes ? `<div style="margin-top:16px;padding:12px 14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;font-size:13px;color:#166534"><strong>Note to Customer:</strong> ${customerNotes}</div>` : ''}
-
     <div class="quote-notes">
       <strong>Terms &amp; Conditions</strong>
-      ${paymentTerms}. ${guarantee}. Any additional works identified on site will be quoted separately prior to proceeding.${vatRate === 0 ? ' This quote is VAT exempt.' : ''} Materials marked TBC will be confirmed before work begins.
+      Payment is due within 14 days of completion. All workmanship carries a 12-month guarantee. Any additional works identified on site will be quoted separately prior to proceeding. Materials marked TBC will be confirmed before work begins.
     </div>
 
     <div class="quote-validity">This quote is valid until ${validUntil}</div>
@@ -1965,13 +1634,10 @@ function resetAll() {
   liveLabel.classList.remove('recording-active');
   recordStatus.textContent = 'Tap to record a voice note';
   recordStatus.className = '';
-  taskItems.length = 0; materialItems.length = 0;
-  tagData.assumptions = []; tagData.missing = [];
-  renderTasks(); renderMaterials();
-  ['assumptions','missing'].forEach(renderTags);
-  setVatMode('standard');
-  setDepositMode('none');
+  tagData.tasks = []; tagData.materials = []; tagData.assumptions = []; tagData.missing = [];
+  ['tasks','materials','assumptions','missing'].forEach(renderTags);
   savedQuoteState = null;
+  window._detectedMatCost = 0;
   setStep(1);
 }
 
