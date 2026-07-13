@@ -1284,108 +1284,72 @@ function startMainRecording() {
   sessionTranscript = transcriptBox.value.trim();
   if (sessionTranscript) sessionTranscript += ' ';
 
-  // Show a "preparing" state immediately so user knows tap was registered
-  recordBtn.classList.add('recording');
-  liveLabel.classList.add('recording-active');
-  recordStatus.textContent = '● Preparing microphone...';
-  recordStatus.className = 'active';
+  mainRecognition = new SR();
+  mainRecognition.continuous = !isMobile;
+  mainRecognition.interimResults = true;
+  mainRecognition.lang = 'en-GB';
+  mainRecognition.maxAlternatives = 1;
 
-  // Delay start on mobile to avoid the tap sound/vibration triggering instant stop
-  // and to give iOS Safari time to properly initialise the microphone
-  const startDelay = isMobile ? 400 : 0;
+  mainRecognition.onstart = () => {
+    isRecording = true;
+    recordBtn.classList.add('recording');
+    liveLabel.classList.add('recording-active');
+    recordStatus.textContent = '● Recording... tap to stop';
+    recordStatus.className = 'active';
+  };
 
-  setTimeout(() => {
-    if (!isRecording && !recordBtn.classList.contains('recording')) return; // user cancelled
-
-    mainRecognition = new SR();
-    mainRecognition.continuous = !isMobile;
-    mainRecognition.interimResults = true;
-    mainRecognition.lang = 'en-GB';
-    mainRecognition.maxAlternatives = 1;
-
-    // Track when recording actually started to ignore false early onend
-    let startedAt = null;
-    let hasGotResult = false;
-
-    mainRecognition.onstart = () => {
-      isRecording = true;
-      startedAt = Date.now();
-      recordStatus.textContent = '● Recording... tap to stop';
-      recordStatus.className = 'active';
-    };
-
-    mainRecognition.onresult = (e) => {
-      hasGotResult = true;
-      if (isMobile) {
-        let sessionResult = '';
-        let interim = '';
-        for (let i = 0; i < e.results.length; i++) {
-          if (e.results[i].isFinal) {
-            sessionResult += e.results[i][0].transcript + ' ';
-          } else {
-            interim += e.results[i][0].transcript;
-          }
+  mainRecognition.onresult = (e) => {
+    if (isMobile) {
+      let sessionResult = '';
+      let interim = '';
+      for (let i = 0; i < e.results.length; i++) {
+        if (e.results[i].isFinal) {
+          sessionResult += e.results[i][0].transcript + ' ';
+        } else {
+          interim += e.results[i][0].transcript;
         }
-        if (sessionResult.trim()) finalTranscript = sessionResult;
-        updateLiveDisplay(sessionTranscript + finalTranscript, interim);
-      } else {
-        let interim = '';
-        for (let i = e.resultIndex; i < e.results.length; i++) {
-          if (e.results[i].isFinal) {
-            finalTranscript += e.results[i][0].transcript + ' ';
-          } else {
-            interim += e.results[i][0].transcript;
-          }
+      }
+      finalTranscript = sessionResult;
+      updateLiveDisplay(sessionTranscript + finalTranscript, interim);
+    } else {
+      let interim = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        if (e.results[i].isFinal) {
+          finalTranscript += e.results[i][0].transcript + ' ';
+        } else {
+          interim += e.results[i][0].transcript;
         }
-        updateLiveDisplay(sessionTranscript + finalTranscript, interim);
       }
-    };
-
-    mainRecognition.onerror = (e) => {
-      if (e.error === 'no-speech') {
-        // On mobile, no-speech just means a pause — restart silently
-        if (isMobile && isRecording) restartMobileMain();
-        return;
-      }
-      if (e.error === 'aborted') return;
-      if (e.error === 'not-allowed') {
-        stopMainRecording();
-        recordStatus.textContent = 'Microphone blocked — check permissions or type below.';
-        recordStatus.className = '';
-      }
-      // Other errors: try to restart rather than giving up
-      if (isRecording) restartMobileMain();
-    };
-
-    mainRecognition.onend = () => {
-      if (!isRecording) return;
-
-      // iOS Safari bug: fires onend almost instantly before any speech
-      // If it ended within 800ms and got no result, restart rather than stopping
-      const elapsed = startedAt ? Date.now() - startedAt : 999;
-      if (elapsed < 800 && !hasGotResult) {
-        // False stop — restart immediately
-        restartMobileMain();
-        return;
-      }
-
-      if (isMobile) {
-        const confirmed = transcriptBox.value.trim();
-        if (confirmed) sessionTranscript = confirmed + ' ';
-        finalTranscript = '';
-        restartMobileMain();
-      } else {
-        try { mainRecognition.start(); } catch(e) {}
-      }
-    };
-
-    try {
-      mainRecognition.start();
-    } catch(err) {
-      stopMainRecording();
-      recordStatus.textContent = 'Could not start microphone — type below.';
+      updateLiveDisplay(sessionTranscript + finalTranscript, interim);
     }
-  }, startDelay);
+  };
+
+  mainRecognition.onerror = (e) => {
+    if (e.error === 'no-speech') {
+      if (isMobile && isRecording) restartMobileMain();
+      return;
+    }
+    if (e.error === 'aborted') return;
+    stopMainRecording();
+    recordStatus.textContent = e.error === 'not-allowed'
+      ? 'Microphone blocked — check permissions or type below.'
+      : 'Error — try typing below.';
+    recordStatus.className = '';
+  };
+
+  mainRecognition.onend = () => {
+    if (!isRecording) return;
+    if (isMobile) {
+      sessionTranscript = transcriptBox.value.trim() + ' ';
+      finalTranscript = '';
+      restartMobileMain();
+    } else {
+      try { mainRecognition.start(); } catch(e) {}
+    }
+  };
+
+  try { mainRecognition.start(); }
+  catch(err) { recordStatus.textContent = 'Could not start microphone — type below.'; }
 }
 
 function restartMobileMain() {
