@@ -1602,28 +1602,12 @@ const interimSpan    = document.getElementById('interimSpan');
 const placeholderTxt = document.getElementById('placeholderText');
 const liveLabel      = document.getElementById('liveLabel');
 
-function convertNumberWords(text) {
-  // Convert spoken number words to digits in transcript display
-  const map = {
-    'ten':'10','nine':'9','eight':'8','seven':'7','six':'6',
-    'five':'5','four':'4','three':'3','two':'2','one':'1',
-    'too':'2','to':'2',
-  };
-  let result = text;
-  Object.keys(map).sort((a, b) => b.length - a.length).forEach(word => {
-    const re = new RegExp('\\b' + word + '\\b(?=\\s+[a-z])', 'gi');
-    result = result.replace(re, map[word]);
-  });
-  return result;
-}
-
 function showTranscript(final, interim) {
   const has = final || interim;
   placeholderTxt.style.display = has ? 'none' : 'inline';
-  // Show interim as-is (live), convert number words in final confirmed text
-  finalSpan.textContent   = convertNumberWords(final);
+  finalSpan.textContent   = final;
   interimSpan.textContent = interim;
-  transcriptBox.value     = (convertNumberWords(final) + interim).trim();
+  transcriptBox.value     = (final + interim).trim();
 }
 
 if (!SR) {
@@ -1817,22 +1801,7 @@ const KNOWN_ITEMS = [
 ];
 
 function parse(desc) {
-  // Convert number words to digits BEFORE any pattern matching
-  // Handles mishears like "to" / "too" for "two", plus all spoken numbers
-  const NUMBER_WORDS = {
-    'ten':'10','nine':'9','eight':'8','seven':'7','six':'6',
-    'five':'5','four':'4','three':'3','two':'2','one':'1',
-    'too':'2','to':'2', // common mishears of "two"
-  };
-  let converted = desc.toLowerCase();
-  // Replace longest matches first to avoid partial replacements
-  Object.keys(NUMBER_WORDS).sort((a, b) => b.length - a.length).forEach(word => {
-    // Only replace when followed by a space + letter (quantity context, not mid-word)
-    const re = new RegExp('\\b' + word + '\\b(?=\\s+[a-z])', 'gi');
-    converted = converted.replace(re, NUMBER_WORDS[word]);
-  });
-
-  const d = converted;
+  const d = desc.toLowerCase();
   const result = {
     trade_type: '', job_summary: '',
     customer_name: '', customer_email: '', customer_phone: '',
@@ -2029,15 +1998,9 @@ function populateReview(s) {
   renderTasks();
 
   // Materials
-  state.materials = (s.materials_needed || []).map(m => {
-    if (typeof m !== 'object') return { name: m, qty: 1, unitPrice: 0 };
-    // Explicitly parse qty and unitPrice to ensure they are numbers, not strings
-    return {
-      name:      m.name      || '',
-      qty:       parseInt(m.qty)       || 1,
-      unitPrice: parseFloat(m.unitPrice) || 0,
-    };
-  });
+  state.materials = (s.materials_needed || []).map(m =>
+    typeof m === 'object' ? { ...m } : { name: m, qty: 1, unitPrice: 0 }
+  );
   renderMaterials();
 
   // Tags
