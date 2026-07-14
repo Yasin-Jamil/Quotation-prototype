@@ -1049,30 +1049,19 @@ select option { background: var(--surface2); }
   <!-- Payment Terms -->
   <div class="schema-field">
     <label>Payment Terms</label>
-    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-      <span style="font-size:13px;color:var(--text);white-space:nowrap">Payment due within</span>
-      <input type="number" id="s_payment_days" value="14" min="1" max="31" step="1"
-        style="width:64px;flex:none;text-align:center">
-      <span style="font-size:13px;color:var(--text);white-space:nowrap">days of completion</span>
+    <div class="voice-row">
+      <input type="text" id="s_payment_terms" placeholder="e.g. Payment due within 14 days of completion">
+      <button class="btn btn-voice" data-voice="s_payment_terms">🎙</button>
     </div>
-    <p style="font-size:11px;color:var(--muted);margin-top:6px">Adjust the number of days (1–31)</p>
   </div>
 
   <!-- Guarantee -->
   <div class="schema-field">
     <label>Workmanship Guarantee</label>
-    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-      <span style="font-size:13px;color:var(--text);white-space:nowrap">All workmanship carries a</span>
-      <input type="number" id="s_guarantee_value" value="12" min="1" max="120" step="1"
-        style="width:64px;flex:none;text-align:center">
-      <select id="s_guarantee_unit" style="width:auto;flex:none;padding:9px 8px;font-size:13px">
-        <option value="month" selected>month</option>
-        <option value="year">year</option>
-        <option value="week">week</option>
-      </select>
-      <span style="font-size:13px;color:var(--text);white-space:nowrap">guarantee</span>
+    <div class="voice-row">
+      <input type="text" id="s_guarantee" placeholder="e.g. All workmanship carries a 12-month guarantee">
+      <button class="btn btn-voice" data-voice="s_guarantee">🎙</button>
     </div>
-    <p style="font-size:11px;color:var(--muted);margin-top:6px">Adjust the guarantee period — months recommended for most trades</p>
   </div>
 
   <!-- Notes to Customer -->
@@ -1614,19 +1603,16 @@ const placeholderTxt = document.getElementById('placeholderText');
 const liveLabel      = document.getElementById('liveLabel');
 
 function convertNumberWords(text) {
-  // Convert spoken number words → digits
-  // Uses space-anchored patterns instead of \b to avoid Unicode boundary issues
-  // Also handles start-of-string and common mishears (to/too = 2)
-  const map = [
-    ['ten','10'],['nine','9'],['eight','8'],['seven','7'],['six','6'],
-    ['five','5'],['four','4'],['three','3'],['two','2'],['one','1'],
-    ['too','2'],['to','2'],   // mishears of "two"
-  ];
+  // Convert spoken number words to digits in transcript display
+  const map = {
+    'ten':'10','nine':'9','eight':'8','seven':'7','six':'6',
+    'five':'5','four':'4','three':'3','two':'2','one':'1',
+    'too':'2','to':'2',
+  };
   let result = text;
-  map.forEach(([word, num]) => {
-    // Match: start of string OR preceded by space, followed by space + any char
-    const re = new RegExp('(?:^|(?<=\\s))' + word + '(?=\\s)', 'gi');
-    result = result.replace(re, num);
+  Object.keys(map).sort((a, b) => b.length - a.length).forEach(word => {
+    const re = new RegExp('\\b' + word + '\\b(?=\\s+[a-z])', 'gi');
+    result = result.replace(re, map[word]);
   });
   return result;
 }
@@ -1838,17 +1824,13 @@ function parse(desc) {
     'five':'5','four':'4','three':'3','two':'2','one':'1',
     'too':'2','to':'2', // common mishears of "two"
   };
-  // Pad with spaces for reliable word-boundary matching
-  let converted = ' ' + desc.toLowerCase() + ' ';
-  // Replace longest words first to avoid partial matches (e.g. "ten" before "one")
+  let converted = desc.toLowerCase();
+  // Replace longest matches first to avoid partial replacements
   Object.keys(NUMBER_WORDS).sort((a, b) => b.length - a.length).forEach(word => {
-    const re = new RegExp(' ' + word + ' ', 'gi');
-    // Use while loop to handle repeated occurrences
-    while (re.test(converted)) {
-      converted = converted.replace(new RegExp(' ' + word + ' ', 'gi'), ' ' + NUMBER_WORDS[word] + ' ');
-    }
+    // Only replace when followed by a space + letter (quantity context, not mid-word)
+    const re = new RegExp('\\b' + word + '\\b(?=\\s+[a-z])', 'gi');
+    converted = converted.replace(re, NUMBER_WORDS[word]);
   });
-  converted = converted.trim();
 
   const d = converted;
   const result = {
@@ -2068,11 +2050,10 @@ function populateReview(s) {
   const today = new Date();
   const valid = new Date(); valid.setDate(today.getDate() + 30);
   set('s_valid_until',    valid.toISOString().split('T')[0]);
-  // Set default values for structured term fields if not already set
-  const payDaysEl = document.getElementById('s_payment_days');
-  const guarValEl = document.getElementById('s_guarantee_value');
-  if (payDaysEl && !payDaysEl.value) payDaysEl.value = '14';
-  if (guarValEl && !guarValEl.value) guarValEl.value = '12';
+  const terms = document.getElementById('s_payment_terms');
+  const guar  = document.getElementById('s_guarantee');
+  if (terms && !terms.value) terms.value = 'Payment due within 14 days of completion';
+  if (guar  && !guar.value)  guar.value  = 'All workmanship carries a 12-month guarantee';
 
   // Auto-save draft after populating
   setTimeout(saveDraft, 100);
@@ -2203,9 +2184,7 @@ function generateQuote() {
     labour_hours:   get('s_labour_hours'),   hourly_rate:    get('s_hourly_rate'),
     labour_total:   get('s_labour_total'),   vatMode:        state.vatMode,
     vat_rate:       get('s_vat_rate'),       valid_until:    get('s_valid_until'),
-    payment_days:     get('s_payment_days'),
-    guarantee_value:  get('s_guarantee_value'),
-    guarantee_unit:   get('s_guarantee_unit'),
+    payment_terms:  get('s_payment_terms'),  guarantee:      get('s_guarantee'),
     customer_notes: get('s_customer_notes'), depositMode:    state.depositMode,
     deposit_value:   get('s_deposit_value'),
     discountMode:    state.discountMode,
@@ -2297,12 +2276,8 @@ function generateQuote() {
   state.editSnapshot = snap;
 
   // Terms
-  // Build terms from structured fields
-  const payDays  = parseInt(get('s_payment_days')) || 14;
-  const payTerms = 'Payment due within ' + payDays + ' day' + (payDays === 1 ? '' : 's') + ' of completion';
-  const guarVal  = parseInt(get('s_guarantee_value')) || 12;
-  const guarUnit = get('s_guarantee_unit') || 'month';
-  const guarantee = 'All workmanship carries a ' + guarVal + '-' + guarUnit + ' guarantee';
+  const payTerms = get('s_payment_terms') || 'Payment due within 14 days of completion';
+  const guarantee = get('s_guarantee')    || 'All workmanship carries a 12-month guarantee';
   const custNotes = get('s_customer_notes');
 
   // Customer block
@@ -2430,9 +2405,7 @@ function editQuote() {
   set('s_customer_email', s.customer_email);set('s_address',        s.address);
   set('s_city',           s.city);          set('s_postcode',       s.postcode);
   set('s_urgency',        s.urgency);       set('s_valid_until',    s.valid_until);
-  set('s_payment_days',    s.payment_days    || '14');
-  set('s_guarantee_value', s.guarantee_value || '12');
-  set('s_guarantee_unit',  s.guarantee_unit  || 'month');
+  set('s_payment_terms',  s.payment_terms); set('s_guarantee',      s.guarantee);
   set('s_customer_notes', s.customer_notes);set('s_deposit_value',  s.deposit_value);
   set('s_vat_rate',       s.vat_rate);
 
@@ -2507,7 +2480,7 @@ function resetAll() {
   const clearIds = [
     's_trade_type','s_job_summary','s_customer_name','s_customer_phone','s_customer_email',
     's_address','s_city','s_postcode','s_labour_hours','s_hourly_rate','s_labour_total',
-    's_customer_notes','s_deposit_value','s_vat_rate',
+    's_payment_terms','s_guarantee','s_customer_notes','s_deposit_value','s_vat_rate',
   ];
   clearIds.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
 
@@ -2539,8 +2512,7 @@ document.getElementById('s_assumptions_input').addEventListener('keydown', e => 
 const DRAFT_FIELDS = [
   's_trade_type','s_job_summary','s_customer_name','s_customer_phone','s_customer_email',
   's_address','s_city','s_postcode','s_labour_hours','s_hourly_rate','s_labour_total',
-  's_payment_days','s_guarantee_value','s_guarantee_unit',
-  's_customer_notes','s_deposit_value','s_vat_rate',
+  's_payment_terms','s_guarantee','s_customer_notes','s_deposit_value','s_vat_rate',
   's_discount_value','s_valid_until',
 ];
 
@@ -2611,9 +2583,8 @@ function toAPI() {
     discount_value: parseFloat(get('s_discount_value')) || 0,
     deposit_mode: state.depositMode,
     deposit_value: parseFloat(get('s_deposit_value')) || 0,
-    payment_days:    parseInt(get('s_payment_days')) || 14,
-    guarantee_value: parseInt(get('s_guarantee_value')) || 12,
-    guarantee_unit:  get('s_guarantee_unit') || 'month',
+    payment_terms: get('s_payment_terms'),
+    guarantee: get('s_guarantee'),
     customer_notes: get('s_customer_notes'),
     site_survey: document.getElementById('s_site_survey') ? document.getElementById('s_site_survey').checked : false,
     valid_until: get('s_valid_until'),
