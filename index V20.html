@@ -933,7 +933,7 @@ select option { background: var(--surface2); }
     <div class="schema-field">
       <label>Customer Phone</label>
       <div class="voice-row">
-        <input type="text" id="s_customer_phone" placeholder="e.g. 07700 900000" inputmode="tel">
+        <input type="tel" id="s_customer_phone" placeholder="e.g. 07700 900000">
         <button class="btn btn-voice" data-voice="s_customer_phone">🎙</button>
       </div>
     </div>
@@ -1049,23 +1049,13 @@ select option { background: var(--surface2); }
   <!-- Payment Terms -->
   <div class="schema-field">
     <label>Payment Terms</label>
-    <select id="s_payment_days" onchange="toggleCustomDays(this.value)">
-      <option value="0">Immediate payment on completion</option>
-      <option value="7">7 days</option>
-      <option value="14" selected>14 days</option>
-      <option value="21">21 days</option>
-      <option value="28">28 days</option>
-      <option value="30">30 days</option>
-      <option value="custom">Custom…</option>
-    </select>
-    <div id="customDaysSection" class="hidden" style="margin-top:8px">
-      <div style="display:flex;align-items:center;gap:8px">
-        <span style="font-size:13px;color:var(--text)">Payment due within</span>
-        <input type="number" id="s_payment_days_custom" value="14" min="1" max="365" step="1"
-          style="width:64px;flex:none;text-align:center">
-        <span style="font-size:13px;color:var(--text)">days of completion</span>
-      </div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <span style="font-size:13px;color:var(--text);white-space:nowrap">Payment due within</span>
+      <input type="number" id="s_payment_days" value="14" min="1" max="31" step="1"
+        style="width:64px;flex:none;text-align:center">
+      <span style="font-size:13px;color:var(--text);white-space:nowrap">days of completion</span>
     </div>
+    <p style="font-size:11px;color:var(--muted);margin-top:6px">Adjust the number of days (1–31)</p>
   </div>
 
   <!-- Guarantee -->
@@ -1298,21 +1288,6 @@ function getVatRate() {
   if (state.vatMode === 'exempt')  return 0;
   if (state.vatMode === 'custom')  return parseFloat(document.getElementById('s_vat_rate').value) || 0;
   return 20;
-}
-
-function toggleCustomDays(val) {
-  const sec = document.getElementById('customDaysSection');
-  if (sec) sec.classList.toggle('hidden', val !== 'custom');
-}
-
-function getPaymentDays() {
-  const sel = document.getElementById('s_payment_days');
-  if (!sel) return 14;
-  if (sel.value === '0') return 0;
-  if (sel.value === 'custom') {
-    return parseInt(document.getElementById('s_payment_days_custom').value) || 14;
-  }
-  return parseInt(sel.value) || 14;
 }
 
 function setDiscountMode(mode) {
@@ -2101,8 +2076,7 @@ function populateReview(s) {
   set('s_trade_type',      s.trade_type || getBiz().trade);
   set('s_job_summary',     s.job_summary);
   set('s_customer_name',   s.customer_name);
-  // Format phone as string — avoids tel field validation rejecting short numbers
-  set('s_customer_phone', s.customer_phone ? String(s.customer_phone) : '');
+  set('s_customer_phone',  s.customer_phone);
   set('s_customer_email',  s.customer_email);
   set('s_address',         s.address);
   set('s_city',            s.city);
@@ -2280,9 +2254,8 @@ function generateQuote() {
     labour_hours:   get('s_labour_hours'),   hourly_rate:    get('s_hourly_rate'),
     labour_total:   get('s_labour_total'),   vatMode:        state.vatMode,
     vat_rate:       get('s_vat_rate'),       valid_until:    get('s_valid_until'),
-    payment_days:         get('s_payment_days'),
-    payment_days_custom:  get('s_payment_days_custom'),
-    guarantee_value:      get('s_guarantee_value'),
+    payment_days:     get('s_payment_days'),
+    guarantee_value:  get('s_guarantee_value'),
     guarantee_unit:   get('s_guarantee_unit'),
     customer_notes: get('s_customer_notes'), depositMode:    state.depositMode,
     deposit_value:   get('s_deposit_value'),
@@ -2376,10 +2349,8 @@ function generateQuote() {
 
   // Terms
   // Build terms from structured fields
-  const payDays  = getPaymentDays();
-  const payTerms = payDays === 0
-    ? 'Payment is due immediately upon completion'
-    : 'Payment due within ' + payDays + ' day' + (payDays === 1 ? '' : 's') + ' of completion';
+  const payDays  = parseInt(get('s_payment_days')) || 14;
+  const payTerms = 'Payment due within ' + payDays + ' day' + (payDays === 1 ? '' : 's') + ' of completion';
   const guarVal  = parseInt(get('s_guarantee_value')) || 12;
   const guarUnit = get('s_guarantee_unit') || 'month';
   const guarantee = 'All workmanship carries a ' + guarVal + '-' + guarUnit + ' guarantee';
@@ -2511,8 +2482,6 @@ function editQuote() {
   set('s_city',           s.city);          set('s_postcode',       s.postcode);
   set('s_urgency',        s.urgency);       set('s_valid_until',    s.valid_until);
   set('s_payment_days',    s.payment_days    || '14');
-  toggleCustomDays(s.payment_days || '14');
-  if (s.payment_days === 'custom') set('s_payment_days_custom', s.payment_days_custom || '14');
   set('s_guarantee_value', s.guarantee_value || '12');
   set('s_guarantee_unit',  s.guarantee_unit  || 'month');
   set('s_customer_notes', s.customer_notes);set('s_deposit_value',  s.deposit_value);
@@ -2591,11 +2560,10 @@ function resetAll() {
   const clearIds = [
     's_trade_type','s_job_summary','s_customer_name','s_customer_phone','s_customer_email',
     's_address','s_city','s_postcode','s_labour_hours','s_hourly_rate','s_labour_total',
-    's_payment_days','s_payment_days_custom','s_guarantee_value','s_guarantee_unit',
+    's_payment_days','s_guarantee_value','s_guarantee_unit',
     's_customer_notes','s_deposit_value','s_vat_rate',
     's_discount_value','s_valid_until',
     's_mat_name','s_mat_qty','s_mat_price','s_tasks_input','s_assumptions_input',
-    's_payment_days_custom',
   ];
   clearIds.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
 
@@ -2699,7 +2667,7 @@ function toAPI() {
     discount_value: parseFloat(get('s_discount_value')) || 0,
     deposit_mode: state.depositMode,
     deposit_value: parseFloat(get('s_deposit_value')) || 0,
-    payment_days:    getPaymentDays(),
+    payment_days:    parseInt(get('s_payment_days')) || 14,
     guarantee_value: parseInt(get('s_guarantee_value')) || 12,
     guarantee_unit:  get('s_guarantee_unit') || 'month',
     customer_notes: get('s_customer_notes'),
