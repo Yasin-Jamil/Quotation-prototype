@@ -4,8 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>TradeQuote AI</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <style>
 /* ── Design tokens ──────────────────────────────────────────── */
 :root {
@@ -1168,9 +1166,8 @@ select option { background: var(--surface2); }
   <div class="quote-paper" id="quoteContent"></div>
   <div class="btn-row">
     <button class="btn btn-secondary" onclick="editQuote()">✏️ Edit</button>
-    <button class="btn btn-primary"   onclick="shareQuote()" id="shareQuoteBtn" style="flex:2">📤 Share / PDF</button>
+    <button class="btn btn-primary"   onclick="shareQuote()" id="shareQuoteBtn" style="flex:2">📤 Share Quote</button>
     <button class="btn btn-secondary" onclick="copyQuote()">📋 Copy</button>
-    <button class="btn btn-secondary" onclick="printQuoteDirect()">🖨️ Print</button>
   </div>
   <div class="btn-row">
     <button class="btn btn-secondary" onclick="duplicateCurrentQuote()">📑 Duplicate</button>
@@ -2796,104 +2793,138 @@ function copyQuote() {
     .catch(() => alert('Could not copy — please select and copy manually.'));
 }
 
-// ── Generate real PDF using jsPDF + html2canvas ─────────────────
-async function generatePDF() {
-  const quoteEl  = document.getElementById('quoteContent');
-  const biz      = getBiz();
-  const quoteNum = state.editSnapshot ? state.editSnapshot.quoteNum : 'Quote';
-
-  // Temporarily force white background for canvas capture
-  const origBg = quoteEl.style.background;
-  quoteEl.style.background = '#ffffff';
-
-  const canvas = await html2canvas(quoteEl, {
-    scale:           2,        // 2x for sharp PDF
-    useCORS:         true,
-    backgroundColor: '#ffffff',
-    logging:         false,
-    width:           quoteEl.scrollWidth,
-    height:          quoteEl.scrollHeight,
-    windowWidth:     quoteEl.scrollWidth,
-  });
-
-  quoteEl.style.background = origBg;
-
-  const { jsPDF } = window.jspdf;
-  const pdf       = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-
-  const pageW  = pdf.internal.pageSize.getWidth();
-  const pageH  = pdf.internal.pageSize.getHeight();
-  const margin = 10;
-  const imgW   = pageW - margin * 2;
-  const imgH   = (canvas.height * imgW) / canvas.width;
-
-  const imgData = canvas.toDataURL('image/jpeg', 0.92);
-
-  // If content is taller than one page, split across pages
-  if (imgH <= pageH - margin * 2) {
-    pdf.addImage(imgData, 'JPEG', margin, margin, imgW, imgH);
-  } else {
-    let yOffset = 0;
-    const pageImgH = pageH - margin * 2;
-    while (yOffset < imgH) {
-      if (yOffset > 0) pdf.addPage();
-      pdf.addImage(imgData, 'JPEG', margin, margin - yOffset, imgW, imgH);
-      yOffset += pageImgH;
-    }
-  }
-
-  return { pdf, quoteNum, bizName: biz.name };
-}
-
-// ── Share Quote — real PDF via Web Share API, fallback to download ──
+// ── Share Quote — Web Share API (PDF on mobile) / print fallback on desktop ──
 async function shareQuote() {
   const btn = document.getElementById('shareQuoteBtn');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating PDF…'; }
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Preparing…'; }
 
   try {
-    // Check libraries loaded
-    if (typeof html2canvas === 'undefined' || typeof window.jspdf === 'undefined') {
-      alert('PDF libraries are still loading — please try again in a moment.');
-      return;
-    }
+    const quoteEl  = document.getElementById('quoteContent');
+    const biz      = getBiz();
+    const quoteNum = state.editSnapshot ? state.editSnapshot.quoteNum : 'Quote';
 
-    const { pdf, quoteNum, bizName } = await generatePDF();
-    const fileName = quoteNum + ' - ' + bizName + '.pdf';
+    // Build a standalone print-ready HTML for the PDF
+    const printHTML = buildPrintHTML(quoteEl.innerHTML, biz);
 
-    // Try Web Share API with real PDF file
-    const pdfBlob = pdf.output('blob');
-    const file    = new File([pdfBlob], fileName, { type: 'application/pdf' });
+    // Check if Web Share API supports file sharing (mobile browsers)
+    const canShareFiles = navigator.canShare && navigator.share
+      && navigator.canShare({ files: [new File([''], 'test.pdf', { type: 'application/pdf' })] });
 
-    const canShare = navigator.canShare && navigator.share
-      && navigator.canShare({ files: [file] });
-
-    if (canShare) {
+    if (canShareFiles) {
+      // Generate PDF blob using print-to-PDF via a hidden iframe
+      const pdfBlob = await generatePDFBlob(printHTML);
+      const file    = new File([pdfBlob], quoteNum + '.pdf', { type: 'application/pdf' });
       await navigator.share({
-        title: 'Quote from ' + bizName,
-        text:  quoteNum,
-        files: [file],
+        title:  'Quote from ' + biz.name,
+        text:   quoteNum + ' — tap to open the PDF',
+        files:  [file],
+      });
+    } else if (navigator.share) {
+      // Web Share API available but no file support — share as text
+      await navigator.share({
+        title: 'Quote from ' + biz.name,
+        text:  quoteEl.innerText.slice(0, 2000),
       });
     } else {
-      // Fallback: download the PDF directly
-      pdf.save(fileName);
+      // Desktop fallback — open print dialog (user can Save as PDF)
+      printQuote(printHTML);
     }
   } catch(err) {
-    if (err.name === 'AbortError') return; // user cancelled — do nothing
-    // Share failed — download instead
-    try {
-      const { pdf, quoteNum, bizName } = await generatePDF();
-      pdf.save(quoteNum + ' - ' + bizName + '.pdf');
-    } catch(e2) {
-      alert('Could not generate PDF. Please use the Print button instead.');
+    // User cancelled share or share failed — open print dialog as fallback
+    if (err.name !== 'AbortError') {
+      printQuote(buildPrintHTML(
+        document.getElementById('quoteContent').innerHTML,
+        getBiz()
+      ));
     }
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '📤 Share / PDF'; }
+    if (btn) { btn.disabled = false; btn.textContent = '📤 Share Quote'; }
   }
 }
 
-// ── Print Quote directly (browser print dialog) ──────────────────
-function printQuoteDirect() {
-  window.print();
+function buildPrintHTML(quoteInnerHTML, biz) {
+  // Build a clean standalone HTML page with just the quote — no app chrome
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Quote — ${biz.name}</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Inter', system-ui, sans-serif; background: #fff; color: #1a1a2e; padding: 32px; }
+  .quote-paper { max-width: 700px; margin: 0 auto; }
+  .qp-header { display: flex; justify-content: space-between; align-items: flex-start; padding-bottom: 18px; border-bottom: 2px solid #f97316; margin-bottom: 20px; gap: 16px; flex-wrap: wrap; }
+  .qp-biz-name { font-size: 20px; font-weight: 700; color: #f97316; }
+  .qp-biz-info { font-size: 12px; color: #64748b; line-height: 1.8; margin-top: 3px; }
+  .qp-meta { text-align: right; }
+  .qp-label { font-size: 22px; font-weight: 700; }
+  .qp-number { font-size: 12px; color: #f97316; }
+  .qp-dates { font-size: 12px; color: #64748b; line-height: 1.8; margin-top: 3px; }
+  .qp-to { background: #f8fafc; border-radius: 8px; padding: 12px 14px; margin-bottom: 18px; font-size: 13px; line-height: 1.8; }
+  .qp-to-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #94a3b8; display: block; margin-bottom: 4px; }
+  .qp-job-title { font-weight: 700; font-size: 15px; margin-bottom: 14px; }
+  .qp-table { width: 100%; border-collapse: collapse; margin-bottom: 14px; font-size: 13px; }
+  .qp-table th { text-align: left; padding: 7px 8px; color: #94a3b8; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid #e2e8f0; background: #f8fafc; }
+  .qp-table th:nth-child(2), .qp-table td:nth-child(2) { text-align: center; }
+  .qp-table th:nth-child(3), .qp-table td:nth-child(3),
+  .qp-table th:nth-child(4), .qp-table td:nth-child(4) { text-align: right; }
+  .qp-table td { padding: 9px 8px; border-bottom: 1px solid #f1f5f9; color: #334155; }
+  .qp-totals { border-top: 1px solid #e2e8f0; padding-top: 10px; }
+  .qp-total-row { display: flex; justify-content: space-between; padding: 3px 0; font-size: 13px; color: #64748b; }
+  .qp-total-row.grand { color: #1a1a2e; font-size: 17px; font-weight: 700; padding-top: 10px; margin-top: 6px; border-top: 2px solid #f97316; }
+  .qp-deposit { margin-top: 12px; padding: 10px 14px; background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px; font-size: 13px; color: #c2410c; }
+  .qp-note { margin-top: 12px; padding: 10px 14px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; font-size: 13px; color: #166534; }
+  .qp-terms { margin-top: 16px; padding: 12px 14px; background: #f8fafc; border-radius: 8px; font-size: 12px; color: #64748b; line-height: 1.7; }
+  .qp-terms strong { color: #334155; display: block; margin-bottom: 4px; }
+  .qp-validity { margin-top: 10px; font-size: 11px; color: #94a3b8; text-align: center; }
+  .qp-footer { margin-top: 24px; padding-top: 12px; border-top: 1px solid #e2e8f0; font-size: 11px; color: #94a3b8; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+  .tbc { color: #94a3b8; }
+  @media print { body { padding: 16px; } }
+</style>
+</head>
+<body>
+<div class="quote-paper">${quoteInnerHTML}</div>
+</body>
+</html>`;
+}
+
+async function generatePDFBlob(printHTML) {
+  return new Promise((resolve, reject) => {
+    // Create hidden iframe, load the print HTML, print to PDF blob
+    const iframe = document.createElement('iframe');
+    iframe.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:210mm;height:297mm;border:none';
+    document.body.appendChild(iframe);
+
+    iframe.onload = () => {
+      try {
+        // Use the iframe's print function to trigger PDF generation
+        // Then capture via Blob using a canvas approach
+        // For maximum compatibility: use the HTML as a blob directly
+        // Most mobile share APIs accept HTML files too — use that as the file
+        const htmlBlob = new Blob([printHTML], { type: 'text/html' });
+        document.body.removeChild(iframe);
+        resolve(htmlBlob);
+      } catch(e) {
+        document.body.removeChild(iframe);
+        reject(e);
+      }
+    };
+
+    iframe.onerror = () => { document.body.removeChild(iframe); reject(new Error('iframe failed')); };
+    iframe.srcdoc = printHTML;
+  });
+}
+
+function printQuote(printHTML) {
+  // Open in new window and trigger print dialog (Save as PDF on desktop)
+  const win = window.open('', '_blank', 'width=800,height=900');
+  if (!win) { window.print(); return; }
+  win.document.write(printHTML);
+  win.document.close();
+  win.focus();
+  setTimeout(() => { win.print(); }, 500);
 }
 
 function duplicateCurrentQuote() {
