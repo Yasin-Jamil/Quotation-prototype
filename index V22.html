@@ -1730,8 +1730,6 @@ function startMainRec() {
 
     let startedAt    = null;
     let gotResult    = false;
-    restartAttempts  = 0;
-    lastResultTime   = Date.now();
 
     mainRec.onstart = () => {
       isRecording              = true;
@@ -1794,36 +1792,15 @@ function startMainRec() {
   }, isMobile ? 400 : 0);
 }
 
-let restartAttempts = 0;
-let lastResultTime  = Date.now();
-
 function restartMobileRec() {
-  // Exponential backoff: 100ms → 150ms → 225ms → max 2000ms
-  // Prevents hammering the microphone API after repeated failures
-  const delay = Math.min(100 * Math.pow(1.5, Math.min(restartAttempts, 6)), 2000);
-
   setTimeout(() => {
     if (!isRecording) return;
-
-    // Show helpful message after long silence so user knows mic is still active
-    const silenceSecs = Math.round((Date.now() - lastResultTime) / 1000);
-    if (silenceSecs > 8 && restartAttempts > 2) {
-      recordStatus.textContent = '● Still listening… take your time';
-    }
-
     try {
       mainRec = new SR();
-      mainRec.continuous      = false;
-      mainRec.interimResults  = true;
-      mainRec.lang            = 'en-GB';
-      mainRec.maxAlternatives = 1;
+      mainRec.continuous = false; mainRec.interimResults = true;
+      mainRec.lang = 'en-GB'; mainRec.maxAlternatives = 1;
 
       mainRec.onresult = e => {
-        // Speech detected — reset counters
-        restartAttempts = 0;
-        lastResultTime  = Date.now();
-        recordStatus.textContent = '● Recording… tap to stop';
-        recordStatus.className   = 'active';
         let sess = '', itm = '';
         for (let i = 0; i < e.results.length; i++) {
           if (e.results[i].isFinal) sess += e.results[i][0].transcript + ' ';
@@ -1832,18 +1809,11 @@ function restartMobileRec() {
         if (sess.trim()) finalText = sess;
         showTranscript(sessionText + finalText, itm);
       };
-
       mainRec.onerror = e => {
-        // no-speech / aborted / network = temporary — keep trying
         if (e.error === 'no-speech' || e.error === 'aborted' || e.error === 'network') {
-          restartAttempts++;
           if (isRecording) restartMobileRec();
-          return;
         }
-        // Unrecoverable — stop
-        stopMainRec();
       };
-
       mainRec.onend = () => {
         if (!isRecording) return;
         const confirmed = transcriptBox.value.trim();
@@ -1851,20 +1821,9 @@ function restartMobileRec() {
         finalText = '';
         restartMobileRec();
       };
-
       mainRec.start();
-    } catch(err) {
-      restartAttempts++;
-      if (isRecording && restartAttempts < 25) {
-        // Keep trying with longer delays
-        setTimeout(restartMobileRec, 1000);
-      } else {
-        // Too many failures — stop and let user know
-        stopMainRec();
-        recordStatus.textContent = 'Mic stopped — tap to continue or type below.';
-      }
-    }
-  }, delay);
+    } catch(e) { if (isRecording) setTimeout(restartMobileRec, 500); }
+  }, 100);
 }
 
 function stopMainRec() {
@@ -2033,34 +1992,25 @@ function parse(desc) {
   }
 
   // Strip "address is/:" prefix before address matching
-  // Build clean description for address/city extraction
-  let descClean = desc
-    .replace(/\baddress\s*(?:is|:)?\s*/gi, ' ')  // strip "address is" prefix
-    .replace(/\b\d{7,}\b/g, ' ');                  // strip phone-digit runs
+  const descNoAddrPrefix = desc.replace(/\baddress\s*(?:is|:)?\s*/gi, ' ');
 
+  // Strip phone digits to prevent them appearing in address field
+  let descClean = descNoAddrPrefix;
   if (result.customer_phone) {
     const phEsc = result.customer_phone.replace(/[\s\-]/g, '[\\s\\-]?');
     descClean = descClean.replace(new RegExp(phEsc, 'g'), ' ');
   }
+  // Also remove any remaining 7+ digit runs (catches undetected phone numbers)
+  descClean = descClean.replace(/\b\d{7,}\b/g, ' ');
 
   // Address — house number + street name
   const addrM = descClean.match(/(\d{1,4}\s+[A-Za-z][\w\s]{2,25}?(?:street|road|avenue|lane|drive|close|way|place|court|crescent|grove|gardens?|hill|rise|terrace|square))/i);
   if (addrM) result.address = addrM[1].trim();
 
-  // City — strip ALL postcode patterns before detecting city
-  // This prevents postcode tokens being picked up as the city name
-  let descNoPC = descClean
-    .replace(/\b[A-Z]{1,2}\d{1,2}\s*\d[A-Z]{1,2}\b/gi, ' ')   // OL1 1LW
-    .replace(/\b[a-z]{1,2}\d{1,2}\d[a-z]{1,2}\b/gi, ' ')        // ol111w
-    .replace(/\b\d+\s*[a-z]{2,3}\b/gi, ' ');                     // digits+letters runs
-
-  if (result.postcode) {
-    const pcEsc = result.postcode.replace(/\s+/g, '\\s*');
-    descNoPC = descNoPC.replace(new RegExp(pcEsc, 'gi'), ' ');
-  }
-
-  const cityM = descNoPC.match(/(?:street|road|avenue|lane|drive|close|way|place|court|crescent|grove|gardens?|hill|rise|terrace|square)\s+([A-Za-z]{3,25})(?:\s*$|\s*,)/i)
-             || descNoPC.match(/,\s*([A-Za-z]{3,25})\s*(?:,|$)/);
+  // City — word after street type (with optional postcode token in between), or after comma
+  const cityM = descClean.match(/(?:street|road|avenue|lane|drive|close|way|place|terrace|square)\s+(?:[A-Z0-9]{2,8}\s+)?([A-Za-z]{3,20})(?:\s*$|\s*,)/i)
+             || descClean.match(/(?:street|road|avenue|lane|drive|close|way|place|terrace|square)\s+([A-Za-z]{3,20})(?:\s*$|\s*,)/i)
+             || descClean.match(/,\s*([A-Za-z]{3,20})\s*(?:,|$)/);
   if (cityM && !/(street|road|avenue|lane|drive|close|way|place|terrace|square)/i.test(cityM[1])) {
     result.city = cityM[1].trim().replace(/\b\w/g, c => c.toUpperCase());
   }
@@ -2084,61 +2034,35 @@ function parse(desc) {
   if (labourM && !result.labour_hours) result.labour_fixed_total = parseFloat(labourM[1]);
 
   // Materials — known items first (longest first to avoid partial matches)
-  // Use matchAll so the SAME item mentioned multiple times is captured separately
-  // e.g. "3 sockets £20 each, 2 sockets £60 each" → two socket entries
-  const seenPositions = new Set(); // track match positions to avoid overlaps
-
+  const seen = new Set();
   KNOWN_ITEMS.forEach(item => {
-    const esc   = item.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const name  = titleCase(item);
+    const esc = item.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // Pattern 1: "2 switches costing 65 each"
+    const p1 = new RegExp(`(\\d+)\\s+${esc}(?:s|es)?\\s*(?:costing|costs?|at|@|priced?\\s+at)\\s*[£]?(\\d+(?:\\.\\d+)?)\\s*(?:each|per\\s+unit)?`, 'i');
+    // Pattern 2: "consumer unit costing 100" (no qty)
+    const p2 = new RegExp(`${esc}(?:s|es)?\\s*(?:costing|costs?|at|@|is|priced?\\s+at)\\s*[£]?(\\d+(?:\\.\\d+)?)\\s*(?:each|per\\s+unit)?`, 'i');
+    // Pattern 3: qty only
+    const p3 = new RegExp(`(\\d+)\\s+${esc}(?:s|es)?(?!\\s*[£\\d])`, 'i');
 
-    // Pattern 1: qty + item + price  e.g. "3 sockets £20 each" or "3 sockets 20 each"
-    const p1 = new RegExp(
-      '(\\d+)\\s+' + esc + '(?:s|es)?\\s*(?:costing|costs?|at|@|priced?\\s+at)?\\s*[£]?(\\d+(?:\\.\\d+)?)\\s*(?:each|per\\s+unit|apiece)?',
-      'gi'
-    );
-    // Pattern 2: item + price (no qty)  e.g. "consumer unit costing £100"
-    const p2 = new RegExp(
-      '(?<![\\d\\s])' + esc + '(?:s|es)?\\s*(?:costing|costs?|at|@|is|priced?\\s+at)\\s*[£]?(\\d+(?:\\.\\d+)?)\\s*(?:each|per\\s+unit)?',
-      'gi'
-    );
-    // Pattern 3: qty + item only (no price)
-    const p3 = new RegExp('(\\d+)\\s+' + esc + '(?:s|es)?(?!\\s*[£\\d])', 'gi');
+    const key = item.toLowerCase();
+    if (seen.has(key)) return;
 
-    let matched = false;
-
-    // Try P1 first — gets all instances (matchAll)
-    for (const m of d.matchAll(p1)) {
-      if (seenPositions.has(m.index)) continue;
-      seenPositions.add(m.index);
-      result.materials_needed.push({ name, qty: parseInt(m[1]), unitPrice: parseFloat(m[2]) });
-      matched = true;
-    }
-
-    if (!matched) {
-      // Try P2 — no quantity
-      for (const m of d.matchAll(p2)) {
-        if (seenPositions.has(m.index)) continue;
-        seenPositions.add(m.index);
-        result.materials_needed.push({ name, qty: 1, unitPrice: parseFloat(m[1]) });
-        matched = true;
-      }
-    }
-
-    if (!matched) {
-      // Try P3 — qty only, no price
-      const m = d.match(p3);
-      if (m) result.materials_needed.push({ name, qty: parseInt(m[1]), unitPrice: 0 });
+    let m;
+    if ((m = d.match(p1))) {
+      seen.add(key);
+      result.materials_needed.push({ name: titleCase(item), qty: parseInt(m[1]), unitPrice: parseFloat(m[2]) });
+    } else if ((m = d.match(p2))) {
+      seen.add(key);
+      result.materials_needed.push({ name: titleCase(item), qty: 1, unitPrice: parseFloat(m[1]) });
+    } else if ((m = d.match(p3))) {
+      seen.add(key);
+      result.materials_needed.push({ name: titleCase(item), qty: parseInt(m[1]), unitPrice: 0 });
     }
   });
 
-  // Remove entries where a more specific item was also matched at the same position
-  // e.g. if "double socket" matched, remove the plain "socket" match at same position
+  // Deduplicate: prefer more specific names
   result.materials_needed = result.materials_needed.filter((m, i, arr) =>
-    !arr.some((other, j) => j !== i
-      && other.name.toLowerCase().includes(m.name.toLowerCase())
-      && other.name.length > m.name.length
-      && other.qty === m.qty && other.unitPrice === m.unitPrice)
+    !arr.some((other, j) => j !== i && other.name.toLowerCase().includes(m.name.toLowerCase()) && other.name.length > m.name.length)
   );
 
   // Tasks
