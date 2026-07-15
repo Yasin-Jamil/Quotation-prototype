@@ -1071,30 +1071,18 @@ select option { background: var(--surface2); }
   <!-- Guarantee -->
   <div class="schema-field">
     <label>Workmanship Guarantee</label>
-    <select id="s_guarantee_type" onchange="toggleGuarantee(this.value)" style="margin-bottom:8px">
-      <option value="none">No guarantee offered</option>
-      <option value="month" selected>Months</option>
-      <option value="year">Years</option>
-    </select>
-    <div id="guaranteeSection">
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-        <span style="font-size:13px;color:var(--text);white-space:nowrap">All workmanship carries a</span>
-        <select id="s_guarantee_value" onchange="updateGuaranteePreview()" style="width:auto;flex:none;padding:9px 8px;font-size:13px">
-          <option value="1">1</option>
-          <option value="2">2</option>
-          <option value="3">3</option>
-          <option value="6">6</option>
-          <option value="12" selected>12</option>
-          <option value="18">18</option>
-          <option value="24">24</option>
-          <option value="36">36</option>
-          <option value="48">48</option>
-          <option value="60">60</option>
-        </select>
-        <span id="s_guarantee_unit_label" style="font-size:13px;color:var(--text);white-space:nowrap">month guarantee</span>
-      </div>
-      <p style="font-size:11px;color:var(--muted);margin-top:6px" id="guaranteePreview"></p>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <span style="font-size:13px;color:var(--text);white-space:nowrap">All workmanship carries a</span>
+      <input type="number" id="s_guarantee_value" value="12" min="1" max="120" step="1"
+        style="width:64px;flex:none;text-align:center">
+      <select id="s_guarantee_unit" style="width:auto;flex:none;padding:9px 8px;font-size:13px">
+        <option value="month" selected>month</option>
+        <option value="year">year</option>
+        <option value="week">week</option>
+      </select>
+      <span style="font-size:13px;color:var(--text);white-space:nowrap">guarantee</span>
     </div>
+    <p style="font-size:11px;color:var(--muted);margin-top:6px">Adjust the guarantee period — months recommended for most trades</p>
   </div>
 
   <!-- Notes to Customer -->
@@ -1310,27 +1298,6 @@ function getVatRate() {
   if (state.vatMode === 'exempt')  return 0;
   if (state.vatMode === 'custom')  return parseFloat(document.getElementById('s_vat_rate').value) || 0;
   return 20;
-}
-
-function toggleGuarantee(type) {
-  const sec = document.getElementById('guaranteeSection');
-  const lbl = document.getElementById('s_guarantee_unit_label');
-  if (!sec) return;
-  sec.classList.toggle('hidden', type === 'none');
-  if (lbl) lbl.textContent = (type === 'year' ? 'year' : 'month') + ' guarantee';
-  updateGuaranteePreview();
-}
-
-function updateGuaranteePreview() {
-  const preview = document.getElementById('guaranteePreview');
-  if (!preview) return;
-  const type = document.getElementById('s_guarantee_type');
-  const val  = document.getElementById('s_guarantee_value');
-  if (!type || !val) return;
-  if (type.value === 'none') { preview.textContent = 'No guarantee will appear on the quote.'; return; }
-  const unit = type.value === 'year' ? 'year' : 'month';
-  const n    = val.value;
-  preview.textContent = 'Quote will read: "All workmanship carries a ' + n + '-' + unit + ' guarantee"';
 }
 
 function toggleCustomDays(val) {
@@ -1957,27 +1924,24 @@ function parse(desc) {
   const emailM = desc.match(/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/);
   if (emailM) result.customer_email = emailM[0].toLowerCase();
 
-  // Phone — handle spaced digits ("7 8 4 5 6 4 8 7"), missing leading 0, and word numbers
-  // Step 1: extract raw phone string after keyword
+  // Phone — accept 7-11 digits, handle spoken keyword prefixes
+  // Looser digit count to handle speech dropping digits
   const phoneKeyM = desc.match(
-    /(?:phone(?:\s+number)?|mobile(?:\s+number)?|tel(?:ephone)?|mob|contact(?:\s+(?:number|no|num))?)\s*(?:is|:)?\s*([\d\s]{7,40})/i
+    /(?:phone(?:\s+number)?|mobile(?:\s+number)?|tel(?:ephone)?|mob|contact(?:\s+(?:number|no|num))?)\s*(?:is|:)?\s*((?:\+44[\s]?|0)[\d\s]{7,13})/i
   );
   if (phoneKeyM) {
-    const raw = phoneKeyM[1].trim();
-    // Collapse spaced single digits: "7 8 4 5 6" → "78456"
-    const collapsed = raw.replace(/(\d)\s+(?=\d)/g, '$1').replace(/\s+/g, '');
-    let digits = collapsed.replace(/\D/g, '');
-    // Add leading 0 if starts with 7 and looks like UK mobile (9-10 digits)
-    if (/^7\d{8,9}$/.test(digits)) digits = '0' + digits;
+    const digits = phoneKeyM[1].replace(/\D/g, '');
     if (digits.length >= 7) result.customer_phone = digits;
   }
-  // Fallback: bare 07xxx mobile in text (may be spaced)
+  // Fallback: bare 07xxx mobile number (exact 11 digits)
   if (!result.customer_phone) {
-    const mobM = desc.match(/\b(07[\d][\d\s]{7,12})\b/);
-    if (mobM) {
-      const collapsed = mobM[1].replace(/(\d)\s+(?=\d)/g, '$1').replace(/\s+/g, '');
-      if (collapsed.replace(/\D/g,'').length >= 9) result.customer_phone = collapsed.replace(/\D/g,'');
-    }
+    const mobM = desc.match(/\b(07\d{9})\b/);
+    if (mobM) result.customer_phone = mobM[1];
+  }
+  // Fallback 2: any 07xxx-like number even if slightly short/long
+  if (!result.customer_phone) {
+    const mobLoose = desc.match(/\b(07[\d\s]{7,10})\b/);
+    if (mobLoose) result.customer_phone = mobLoose[1].replace(/\s/g, '');
   }
 
   // Postcode — handles standard "OL1 1LW", run-together "ol111w", and short speech versions
@@ -2022,15 +1986,8 @@ function parse(desc) {
   const rateM = d.match(/[£]?(\d+)\s*(?:per\s+hour|p\/h|\/hr|an\s+hour)/i);
   if (rateM) result.hourly_rate = parseFloat(rateM[1]);
 
-  const labourM =
-    // "labour costing £100" / "labour is £100" / "labour at £100"
-    d.match(/labour\s+(?:costing|costs?|is|at|totalling|of|will be)\s*[£]?(\d+(?:\.\d+)?)/i)
-    // "labour £100" — bare £ with no keyword
-    || d.match(/labour\s*[£](\d+(?:\.\d+)?)/i)
-    // "labour 100" — just a number after the word labour
-    || d.match(/labour\s+(\d+(?:\.\d+)?)(?!\s*(?:hours?|hrs?|per|p\/h))/i)
-    // "£100 for labour" / "£100 labour"
-    || d.match(/[£](\d+(?:\.\d+)?)\s*(?:for\s+)?labour(?!\s*[a-z])/i);
+  const labourM = d.match(/labour\s*(?:costing|costs?|is|at|totalling|of)\s*[£]?(\d+(?:\.\d+)?)/i)
+               || d.match(/[£]?(\d+(?:\.\d+)?)\s*(?:for\s+)?labour(?!\s*[a-z])/i);
   if (labourM && !result.labour_hours) result.labour_fixed_total = parseFloat(labourM[1]);
 
   // Materials — known items first (longest first to avoid partial matches)
@@ -2190,12 +2147,9 @@ function populateReview(s) {
   set('s_valid_until',    valid.toISOString().split('T')[0]);
   // Set default values for structured term fields if not already set
   const payDaysEl = document.getElementById('s_payment_days');
-  const guarValEl  = document.getElementById('s_guarantee_value');
-  const guarTypeEl = document.getElementById('s_guarantee_type');
-  if (payDaysEl  && !payDaysEl.value)  payDaysEl.value  = '14';
-  if (guarValEl  && !guarValEl.value)  guarValEl.value  = '12';
-  if (guarTypeEl && !guarTypeEl.value) { guarTypeEl.value = 'month'; toggleGuarantee('month'); }
-  updateGuaranteePreview();
+  const guarValEl = document.getElementById('s_guarantee_value');
+  if (payDaysEl && !payDaysEl.value) payDaysEl.value = '14';
+  if (guarValEl && !guarValEl.value) guarValEl.value = '12';
 
   // Auto-save draft after populating
   setTimeout(saveDraft, 100);
@@ -2328,8 +2282,8 @@ function generateQuote() {
     vat_rate:       get('s_vat_rate'),       valid_until:    get('s_valid_until'),
     payment_days:         get('s_payment_days'),
     payment_days_custom:  get('s_payment_days_custom'),
-    guarantee_value:  get('s_guarantee_value'),
-    guarantee_type:   get('s_guarantee_type'),
+    guarantee_value:      get('s_guarantee_value'),
+    guarantee_unit:   get('s_guarantee_unit'),
     customer_notes: get('s_customer_notes'), depositMode:    state.depositMode,
     deposit_value:   get('s_deposit_value'),
     discountMode:    state.discountMode,
@@ -2426,11 +2380,9 @@ function generateQuote() {
   const payTerms = payDays === 0
     ? 'Payment is due immediately upon completion'
     : 'Payment due within ' + payDays + ' day' + (payDays === 1 ? '' : 's') + ' of completion';
-  const guarType = get('s_guarantee_type') || 'month';
-  const guarVal  = get('s_guarantee_value') || '12';
-  const guarantee = guarType === 'none'
-    ? ''
-    : 'All workmanship carries a ' + guarVal + '-' + guarType + ' guarantee';
+  const guarVal  = parseInt(get('s_guarantee_value')) || 12;
+  const guarUnit = get('s_guarantee_unit') || 'month';
+  const guarantee = 'All workmanship carries a ' + guarVal + '-' + guarUnit + ' guarantee';
   const custNotes = get('s_customer_notes');
 
   // Customer block
@@ -2522,7 +2474,7 @@ function generateQuote() {
 
     <div class="qp-terms">
       <strong>Terms &amp; Conditions</strong>
-      ${payTerms}.${guarantee ? ' ' + guarantee + '.' : ''} Any additional works identified on site will be quoted separately before proceeding.${vatRate === 0 ? ' This quote is VAT exempt.' : ''}${siteSurvey ? ' Prices are subject to a site survey and may be revised following inspection.' : ''} Materials shown as TBC will be confirmed before work begins.
+      ${payTerms}. ${guarantee}. Any additional works identified on site will be quoted separately before proceeding.${vatRate === 0 ? ' This quote is VAT exempt.' : ''}${siteSurvey ? ' Prices are subject to a site survey and may be revised following inspection.' : ''} Materials shown as TBC will be confirmed before work begins.
     </div>
 
     <div class="qp-validity">This quote is valid until ${validStr}</div>
@@ -2562,8 +2514,7 @@ function editQuote() {
   toggleCustomDays(s.payment_days || '14');
   if (s.payment_days === 'custom') set('s_payment_days_custom', s.payment_days_custom || '14');
   set('s_guarantee_value', s.guarantee_value || '12');
-  set('s_guarantee_type',  s.guarantee_type  || 'month');
-  toggleGuarantee(s.guarantee_type || 'month');
+  set('s_guarantee_unit',  s.guarantee_unit  || 'month');
   set('s_customer_notes', s.customer_notes);set('s_deposit_value',  s.deposit_value);
   set('s_vat_rate',       s.vat_rate);
 
@@ -2640,11 +2591,11 @@ function resetAll() {
   const clearIds = [
     's_trade_type','s_job_summary','s_customer_name','s_customer_phone','s_customer_email',
     's_address','s_city','s_postcode','s_labour_hours','s_hourly_rate','s_labour_total',
-    's_payment_days','s_payment_days_custom','s_guarantee_value','s_guarantee_type',
+    's_payment_days','s_payment_days_custom','s_guarantee_value','s_guarantee_unit',
     's_customer_notes','s_deposit_value','s_vat_rate',
     's_discount_value','s_valid_until',
     's_mat_name','s_mat_qty','s_mat_price','s_tasks_input','s_assumptions_input',
-    's_payment_days_custom','s_guarantee_type',
+    's_payment_days_custom',
   ];
   clearIds.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
 
@@ -2676,7 +2627,7 @@ document.getElementById('s_assumptions_input').addEventListener('keydown', e => 
 const DRAFT_FIELDS = [
   's_trade_type','s_job_summary','s_customer_name','s_customer_phone','s_customer_email',
   's_address','s_city','s_postcode','s_labour_hours','s_hourly_rate','s_labour_total',
-  's_payment_days','s_guarantee_value','s_guarantee_type',
+  's_payment_days','s_guarantee_value','s_guarantee_unit',
   's_customer_notes','s_deposit_value','s_vat_rate',
   's_discount_value','s_valid_until',
 ];
@@ -2749,8 +2700,8 @@ function toAPI() {
     deposit_mode: state.depositMode,
     deposit_value: parseFloat(get('s_deposit_value')) || 0,
     payment_days:    getPaymentDays(),
-    guarantee_type:  get('s_guarantee_type') || 'month',
-    guarantee_value: get('s_guarantee_value') || '12',
+    guarantee_value: parseInt(get('s_guarantee_value')) || 12,
+    guarantee_unit:  get('s_guarantee_unit') || 'month',
     customer_notes: get('s_customer_notes'),
     site_survey: document.getElementById('s_site_survey') ? document.getElementById('s_site_survey').checked : false,
     valid_until: get('s_valid_until'),
