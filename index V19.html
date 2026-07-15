@@ -1870,89 +1870,42 @@ function parse(desc) {
   else if (/carpet|flooring|laminate|vinyl/i.test(d))                                result.trade_type = 'Flooring Specialist';
   else if (/roof|guttering|fascia|soffit/i.test(d))                                  result.trade_type = 'Roofer';
 
-  // Customer name — use non-greedy capture until comma, digit, or contact keyword
+  // Customer name — stop at comma, digit, or contact keyword
   const nameRe = [
-    // "customer name is David Freeman" — non-greedy until comma/keyword
-    /customer\s+name\s+is\s+([a-z\s]+?)(?=\s*[,.]|\s+(?:contact|mobile|phone|email|address|\d)|$)/i,
-    // "customer name David Freeman"
-    /customer\s+name\s+([a-z\s]+?)(?=\s*[,.]|\s+(?:contact|mobile|phone|email|address|\d)|$)/i,
-    // "customer is David Freeman"
-    /customer\s+is\s+([a-z\s]+?)(?=\s*[,.]|\s+(?:contact|mobile|phone|email|address|\d)|$)/i,
-    // "quote/job for David Freeman"
-    /(?:quote|job|work)\s+for\s+([a-z\s]+?)(?=\s*[,.]|\s+(?:contact|mobile|phone|\d)|$)/i,
-    // "Mr/Mrs/Ms Freeman"
-    /(?:mr|mrs|ms|miss|dr)\.?\s+([a-z\s]+?)(?=\s*[,.]|\s+(?:contact|mobile|phone|\d)|$)/i,
+    /customer\s+(?:name\s+is|name|is)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)(?=\s*[,.]|\s+(?:mobile|phone|email|address|\d)|$)/i,
+    /(?:quote|job)\s+for\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)(?=\s*[,.]|\s+(?:mobile|phone|\d)|$)/i,
+    /(?:mr|mrs|ms|miss|dr)\.?\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)(?=\s*[,.]|\s+(?:mobile|phone|\d)|$)/i,
   ];
-  for (const re of nameRe) {
-    const m = desc.match(re);
-    if (m) {
-      const raw = m[1].trim();
-      // Reject if too short or looks like a keyword
-      if (raw.length >= 2 && !/^(?:is|the|a|an|at|in)$/i.test(raw)) {
-        result.customer_name = raw.replace(/\b\w/g, c => c.toUpperCase());
-        break;
-      }
-    }
-  }
+  for (const re of nameRe) { const m = desc.match(re); if (m) { result.customer_name = m[1].trim(); break; } }
 
   // Email
   const emailM = desc.match(/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/);
   if (emailM) result.customer_email = emailM[0].toLowerCase();
 
-  // Phone — accept 7-11 digits, handle spoken keyword prefixes
-  // Looser digit count to handle speech dropping digits
-  const phoneKeyM = desc.match(
-    /(?:phone(?:\s+number)?|mobile(?:\s+number)?|tel(?:ephone)?|mob|contact(?:\s+(?:number|no|num))?)\s*(?:is|:)?\s*((?:\+44[\s]?|0)[\d\s]{7,13})/i
-  );
+  // Phone — keyword required, or bare 07xxx mobile
+  const phoneKeyM = desc.match(/(?:phone(?:\s+number)?|mobile(?:\s+number)?|tel(?:ephone)?|mob|contact(?:\s+(?:number|no|num))?)\s*(?:is|:)?\s*((?:\+44\s*|0)\d[\d\s]{9,10})/i);
   if (phoneKeyM) {
     const digits = phoneKeyM[1].replace(/\D/g, '');
-    if (digits.length >= 7) result.customer_phone = digits;
+    if (digits.length >= 10) result.customer_phone = digits;
   }
-  // Fallback: bare 07xxx mobile number (exact 11 digits)
   if (!result.customer_phone) {
     const mobM = desc.match(/\b(07\d{9})\b/);
     if (mobM) result.customer_phone = mobM[1];
   }
-  // Fallback 2: any 07xxx-like number even if slightly short/long
-  if (!result.customer_phone) {
-    const mobLoose = desc.match(/\b(07[\d\s]{7,10})\b/);
-    if (mobLoose) result.customer_phone = mobLoose[1].replace(/\s/g, '');
-  }
 
-  // Postcode — handles standard "OL1 1LW", run-together "ol111w", and short speech versions
-  const pcM = desc.match(/\b([A-Z]{1,2}\d{1,2}\s*\d[A-Z]{1,2})\b/i)   // standard or 1-letter end
-           || desc.match(/\b([a-z]{1,2}\d{1,2}\d[a-z]{1,2})\b/i);        // run-together
-  if (pcM) {
-    let pc = pcM[1].toUpperCase().replace(/\s+/g, '');
-    // Insert space before last 3 chars (or 2 if short): OL111W → OL1 11W
-    const splitAt = pc.length <= 5 ? -2 : -3;
-    pc = pc.slice(0, splitAt) + ' ' + pc.slice(splitAt);
-    result.postcode = pc.trim();
-  }
+  // Postcode
+  const pcM = desc.match(/\b([A-Z]{1,2}\d{1,2}\s*\d[A-Z]{2})\b/i);
+  if (pcM) result.postcode = pcM[1].toUpperCase().replace(/\s+/g, ' ');
 
-  // Strip "address is/:" prefix before address matching
-  const descNoAddrPrefix = desc.replace(/\baddress\s*(?:is|:)?\s*/gi, ' ');
-
-  // Strip phone digits to prevent them appearing in address field
-  let descClean = descNoAddrPrefix;
-  if (result.customer_phone) {
-    const phEsc = result.customer_phone.replace(/[\s\-]/g, '[\\s\\-]?');
-    descClean = descClean.replace(new RegExp(phEsc, 'g'), ' ');
-  }
-  // Also remove any remaining 7+ digit runs (catches undetected phone numbers)
-  descClean = descClean.replace(/\b\d{7,}\b/g, ' ');
-
-  // Address — house number + street name
-  const addrM = descClean.match(/(\d{1,4}\s+[A-Za-z][\w\s]{2,25}?(?:street|road|avenue|lane|drive|close|way|place|court|crescent|grove|gardens?|hill|rise|terrace|square))/i);
+  // Address — strip phone digits first to avoid contamination
+  const descNoPh = result.customer_phone ? desc.replace(new RegExp(result.customer_phone.replace(/\s/g, '\\s?'), 'g'), '') : desc;
+  const addrM = descNoPh.match(/(\d{1,4}\s+[A-Za-z][\w\s]{2,25}?(?:street|road|avenue|lane|drive|close|way|place|court|crescent|grove|gardens?|hill|rise|terrace|square))/i);
   if (addrM) result.address = addrM[1].trim();
 
-  // City — word after street type (with optional postcode token in between), or after comma
-  const cityM = descClean.match(/(?:street|road|avenue|lane|drive|close|way|place|terrace|square)\s+(?:[A-Z0-9]{2,8}\s+)?([A-Za-z]{3,20})(?:\s*$|\s*,)/i)
-             || descClean.match(/(?:street|road|avenue|lane|drive|close|way|place|terrace|square)\s+([A-Za-z]{3,20})(?:\s*$|\s*,)/i)
-             || descClean.match(/,\s*([A-Za-z]{3,20})\s*(?:,|$)/);
-  if (cityM && !/(street|road|avenue|lane|drive|close|way|place|terrace|square)/i.test(cityM[1])) {
-    result.city = cityM[1].trim().replace(/\b\w/g, c => c.toUpperCase());
-  }
+  // City
+  const cityM = descNoPh.match(/(?:street|road|avenue|lane|drive|close|way|place|terrace|square)\s+([A-Z][a-z]{2,15})/i)
+             || descNoPh.match(/,\s*([A-Z][a-z]{2,15})\s*(?:,|$|[A-Z]{1,2}\d)/);
+  if (cityM && !/(street|road|avenue|lane|drive|close)/i.test(cityM[1])) result.city = cityM[1].trim();
 
   // Labour
   const hoursM = d.match(/(\d+(?:\.\d+)?)\s*(?:hours?|hrs?)/);
@@ -2014,13 +1967,11 @@ function parse(desc) {
     result.job_summary = 'Supply and fit: ' + names.join(', ');
   } else {
     result.job_summary = desc
-      .replace(/address\s+is\s+[^,.]*/gi, '')
-      .replace(/contact\s+number\s+[\d\s]*/gi, '')
-      .replace(/customer\s+(?:name\s+is|name|is|phone|mobile|number|email|address|requires?|wants?)\b[^,.]*/gi, '')
+      .replace(/customer\s+(?:name|is|phone|mobile|number|email|address|requires?|wants?)\b[^,.]*/, '')
       .replace(/(?:labour|materials?)\s*(?:costing|is|at)?\s*[£]?\d+[^,]*/gi, '')
       .replace(/[£]?\d+(?:\.\d+)?\s*(?:each)?/gi, '')
       .replace(/mobile\s*\d+/gi, '')
-      .replace(/\b\d{7,}\b/g, '')
+      .replace(/\d{11}/g, '')
       .replace(/,\s*,+/g, ',').replace(/\s{2,}/g, ' ').trim();
   }
   result.job_summary = titleCase(result.job_summary).slice(0, 200);
@@ -2037,8 +1988,6 @@ function parse(desc) {
   if (!result.customer_phone) result.missing_information.push('Customer phone number not provided');
   if (!result.address && !result.city) result.missing_information.push('Job address not specified');
   if (!result.postcode) result.missing_information.push('Postcode not specified');
-  // Email is optional — show as hint only, does not reduce confidence score
-  if (!result.customer_email) result.assumptions.push('Customer email not provided (optional — needed to send quote)');
 
   result.confidence_score = Math.max(0.1, parseFloat((1 - result.missing_information.length * 0.1).toFixed(2)));
   return result;
@@ -2521,23 +2470,21 @@ function copyQuote() {
 function shareWhatsApp() {
   const text = document.getElementById('quoteContent').innerText;
   const biz  = getBiz();
-  const msg  = '*Quote from ' + biz.name + '*\n\n' + text.slice(0, 1500);
-  const encoded = encodeURIComponent(msg);
-  // wa.me works on mobile; web.whatsapp.com works on desktop
-  const isMob = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-  const url   = isMob
-    ? 'https://wa.me/?text=' + encoded
-    : 'https://web.whatsapp.com/send?text=' + encoded;
+  const msg  = `*Quote from ${biz.name}*\n\n` + text.slice(0, 1500);
+  const url  = 'https://wa.me/?text=' + encodeURIComponent(msg);
   window.open(url, '_blank');
 }
 
 function duplicateCurrentQuote() {
   if (!state.editSnapshot) return;
-  // Clear quote number so a new one is generated on next generate
-  state.editSnapshot = { ...state.editSnapshot, quoteNum: null };
-  // Restore review screen with current snapshot data
+  // Clear the stored quote number so a new one is generated
+  const snap = { ...state.editSnapshot, quoteNum: null };
+  state.editSnapshot = snap;
   editQuote();
-  // User reviews and taps Generate — no auto-trigger
+  // Brief delay then trigger generate with new number
+  setTimeout(() => {
+    document.getElementById('generateBtn').click();
+  }, 100);
 }
 
 function viewAllQuotes() {
@@ -2560,10 +2507,7 @@ function resetAll() {
   const clearIds = [
     's_trade_type','s_job_summary','s_customer_name','s_customer_phone','s_customer_email',
     's_address','s_city','s_postcode','s_labour_hours','s_hourly_rate','s_labour_total',
-    's_payment_days','s_guarantee_value','s_guarantee_unit',
     's_customer_notes','s_deposit_value','s_vat_rate',
-    's_discount_value','s_valid_until',
-    's_mat_name','s_mat_qty','s_mat_price','s_tasks_input','s_assumptions_input',
   ];
   clearIds.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
 
