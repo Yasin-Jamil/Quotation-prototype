@@ -1730,7 +1730,7 @@ function startMainRec() {
 
     let startedAt    = null;
     let gotResult    = false;
-    errorRestarts    = 0;
+    restartAttempts  = 0;
     lastResultTime   = Date.now();
 
     mainRec.onstart = () => {
@@ -1794,17 +1794,22 @@ function startMainRec() {
   }, isMobile ? 400 : 0);
 }
 
-let errorRestarts   = 0;   // counts consecutive ERROR-based restarts (not normal endings)
+let restartAttempts = 0;
 let lastResultTime  = Date.now();
-let silenceTimer    = null;
 
 function restartMobileRec() {
-  // ALWAYS restart with a fixed 50ms delay — imperceptible to the user
-  // Only errors use a longer delay to avoid hammering the API
-  const delay = errorRestarts > 0 ? Math.min(200 * errorRestarts, 1500) : 50;
+  // Exponential backoff: 100ms → 150ms → 225ms → max 2000ms
+  // Prevents hammering the microphone API after repeated failures
+  const delay = Math.min(100 * Math.pow(1.5, Math.min(restartAttempts, 6)), 2000);
 
   setTimeout(() => {
     if (!isRecording) return;
+
+    // Show helpful message after long silence so user knows mic is still active
+    const silenceSecs = Math.round((Date.now() - lastResultTime) / 1000);
+    if (silenceSecs > 8 && restartAttempts > 2) {
+      recordStatus.textContent = '● Still listening… take your time';
+    }
 
     try {
       mainRec = new SR();
@@ -1814,10 +1819,11 @@ function restartMobileRec() {
       mainRec.maxAlternatives = 1;
 
       mainRec.onresult = e => {
-        // Speech detected — reset error counter and silence timer
-        errorRestarts  = 0;
-        lastResultTime = Date.now();
-        clearSilenceMessage();
+        // Speech detected — reset counters
+        restartAttempts = 0;
+        lastResultTime  = Date.now();
+        recordStatus.textContent = '● Recording… tap to stop';
+        recordStatus.className   = 'active';
         let sess = '', itm = '';
         for (let i = 0; i < e.results.length; i++) {
           if (e.results[i].isFinal) sess += e.results[i][0].transcript + ' ';
@@ -1828,38 +1834,32 @@ function restartMobileRec() {
       };
 
       mainRec.onerror = e => {
+        // no-speech / aborted / network = temporary — keep trying
         if (e.error === 'no-speech' || e.error === 'aborted' || e.error === 'network') {
-          // Normal pause — restart immediately, no delay penalty
+          restartAttempts++;
           if (isRecording) restartMobileRec();
           return;
         }
-        // Real error — back off and count it
-        errorRestarts++;
-        if (isRecording && errorRestarts < 15) {
-          restartMobileRec();
-        } else {
-          stopMainRec();
-          recordStatus.textContent = 'Mic stopped — tap to continue or type below.';
-        }
+        // Unrecoverable — stop
+        stopMainRec();
       };
 
       mainRec.onend = () => {
         if (!isRecording) return;
-        // Normal session end — accumulate text and restart immediately
         const confirmed = transcriptBox.value.trim();
         if (confirmed) sessionText = confirmed + ' ';
         finalText = '';
-        // Show silence indicator if user has been quiet for a while
-        scheduleSilenceMessage();
         restartMobileRec();
       };
 
       mainRec.start();
     } catch(err) {
-      errorRestarts++;
-      if (isRecording && errorRestarts < 15) {
-        setTimeout(restartMobileRec, 300);
+      restartAttempts++;
+      if (isRecording && restartAttempts < 25) {
+        // Keep trying with longer delays
+        setTimeout(restartMobileRec, 1000);
       } else {
+        // Too many failures — stop and let user know
         stopMainRec();
         recordStatus.textContent = 'Mic stopped — tap to continue or type below.';
       }
@@ -1867,27 +1867,8 @@ function restartMobileRec() {
   }, delay);
 }
 
-function scheduleSilenceMessage() {
-  clearTimeout(silenceTimer);
-  // Only show "still listening" if user hasn't spoken for 6 seconds
-  silenceTimer = setTimeout(() => {
-    if (isRecording) {
-      recordStatus.textContent = '● Still listening… speak when ready';
-      recordStatus.className   = 'active';
-    }
-  }, 6000);
-}
-
-function clearSilenceMessage() {
-  clearTimeout(silenceTimer);
-  recordStatus.textContent = '● Recording… tap to stop';
-  recordStatus.className   = 'active';
-}
-
 function stopMainRec() {
   isRecording = false;
-  clearTimeout(silenceTimer);
-  errorRestarts = 0;
   if (mainRec) { mainRec.onend = null; try { mainRec.stop(); } catch(e) {} }
   recordBtn.classList.remove('recording');
   liveLabel.classList.remove('recording-on');
