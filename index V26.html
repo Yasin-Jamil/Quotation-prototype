@@ -1953,51 +1953,15 @@ function closeEmailModal() {
 // PARSER
 // ════════════════════════════════════════════════════════════════
 const KNOWN_ITEMS = [
-  // ── Electrical ────────────────────────────────────────────────
-  'consumer unit','fuse board','distribution board','junction box',
-  'double socket outlet','single socket outlet','socket outlet',
-  'double socket','single socket','socket',
-  'dimmer switch','light switch','switch',
-  'light fitting','light fixture','ceiling rose','pendant light',
-  'downlight','spotlight','recessed light',
-  'LED strip','LED driver','LED light',
-  'light','lamp','bulb',
-  'extractor fan','ceiling fan','fan',
-  'smoke alarm','carbon monoxide alarm','alarm',
-  'cable','conduit','trunking','meter','fuse',
-
-  // ── Plumbing ─────────────────────────────────────────────────
-  'combi boiler','back boiler','hot water cylinder','boiler','cylinder',
-  'heated towel rail','towel rail','radiator',
-  'smart thermostat','thermostatic valve','radiator valve',
-  'thermostat','programmer','timer','valve',
-  'circulating pump','pump',
-  'mixer tap','monobloc tap','basin tap','kitchen tap','tap',
-  'electric shower','power shower','thermostatic shower','shower',
-  'shower tray','shower enclosure','shower screen','shower head',
-  'close coupled toilet','toilet','cistern','WC',
-  'wash basin','vanity unit','basin','sink',
-  'freestanding bath','bathtub','bath',
-  'copper pipe','plastic pipe','waste pipe','pipe',
-  'cold water tank','expansion vessel','water tank','tank',
-  'stopcock','isolation valve','check valve','ball valve',
-
-  // ── Building / General ────────────────────────────────────────
-  'floor tile','wall tile','ceramic tile','porcelain tile','tile',
-  'plasterboard','plaster','render',
-  'door frame','door lining','architrave','door handle','door lock','door',
-  'window sill','window board','window',
-  'skirting board','skirting',
-  'lock','handle','hinge','latch','bolt',
-  'kitchen worktop','laminate worktop','worktop',
-  'kitchen unit','base unit','wall unit','cabinet',
-  'insulation','panel','board','sheet','fitting','fixture',
-
-  // ── Roofing / External ────────────────────────────────────────
-  'roof tile','slate','felt','membrane',
-  'guttering','downpipe','gutter','fascia','soffit',
-  'fence panel','fence post','gate post','gate',
-  'satellite dish','aerial',
+  'consumer unit','light fitting','junction box','distribution board',
+  'socket outlet','double socket outlet','double socket','single socket',
+  'dimmer switch','light switch','switch','socket',
+  'radiator','boiler','thermostat','programmer',
+  'extractor fan','ceiling fan',
+  'tap','valve','pump','pipe','cable','tile',
+  'plasterboard','tank','cylinder','meter','panel','board','fitting',
+  'door','window','lock','handle','hinge',
+  'shower','bath','toilet','sink','basin',
 ];
 
 function parse(desc) {
@@ -2249,41 +2213,6 @@ function parse(desc) {
       && other.name.length > m.name.length
       && other.qty === m.qty && other.unitPrice === m.unitPrice)
   );
-
-  // ── Generic fallback: catch "N [item] [price]" not matched by KNOWN_ITEMS ──
-  // e.g. "6 lights £20 each", "4 downlights £15", "2 posts £30"
-  // Only fires if no known item was already found at that position
-  if (result.materials_needed.length === 0 || true) {
-    const alreadyFoundPositions = new Set();
-    result.materials_needed.forEach(m => {
-      // Mark approximate position so we don't double-count
-      const pos = d.indexOf(m.name.toLowerCase());
-      if (pos >= 0) alreadyFoundPositions.add(Math.floor(pos / 10));
-    });
-
-    const genericRe = /(\d+)\s+([a-z][a-z\-]{1,25}(?:\s+[a-z][a-z\-]{1,15})?)\s+(?:costing|costs?|at|@|for\s+)?[£]?(\d+(?:\.\d+)?)\s*(?:each|per\s+unit|apiece|a\s+piece)?/gi;
-    for (const m of d.matchAll(genericRe)) {
-      const rawName  = m[2].trim();
-      const qty      = parseInt(m[1]);
-      const price    = parseFloat(m[3]);
-
-      // Skip noise: labour-related words, pronouns, prepositions
-      const skipWords = /^(and|the|a|an|of|to|for|with|in|on|at|by|is|it|we|us|my|our|your|labour|labor|work|job|hour|hr|day|week|cost|price|total|all|any|some|this|that)$/i;
-      if (skipWords.test(rawName)) continue;
-
-      // Skip if already captured as a known item (rough position check)
-      const approxPos = Math.floor(m.index / 10);
-      if (alreadyFoundPositions.has(approxPos)) continue;
-
-      // Skip if it looks like an address number or phone
-      if (qty > 100 || price > 50000) continue;
-
-      // Capitalise the name properly
-      const name = rawName.replace(/\b\w/g, c => c.toUpperCase());
-      alreadyFoundPositions.add(approxPos);
-      result.materials_needed.push({ name, qty, unitPrice: price });
-    }
-  }
 
   // Tasks
   const taskRe = /(?:install(?:ation)?\s+of|fit(?:ting)?\s+(?:a\s+|an\s+)?|replac(?:e|ing)\s+(?:a\s+|an\s+)?|repair(?:ing)?\s+(?:a\s+|an\s+)?)([a-z][a-z\s]{3,40}?)(?:\s+costing|\s+at\s+[£]|,|$)/gi;
@@ -2873,72 +2802,43 @@ async function generatePDF() {
   const biz      = getBiz();
   const quoteNum = state.editSnapshot ? state.editSnapshot.quoteNum : 'Quote';
 
-  // ── Key fix: render at fixed 700px width so PDF looks A4 regardless of screen size ──
-  // Create a hidden fixed-width container, clone the quote into it, capture that
-  const CAPTURE_WIDTH = 700;
+  // Temporarily force white background for canvas capture
+  const origBg = quoteEl.style.background;
+  quoteEl.style.background = '#ffffff';
 
-  const wrapper = document.createElement('div');
-  wrapper.style.cssText = [
-    'position:fixed',
-    'left:-9999px',
-    'top:0',
-    'width:' + CAPTURE_WIDTH + 'px',
-    'background:#ffffff',
-    'padding:24px',
-    'box-sizing:border-box',
-    'font-family:Inter,system-ui,sans-serif',
-    'color:#1a1a2e',
-    'z-index:-1',
-  ].join(';');
-
-  // Deep clone the quote element
-  const clone = quoteEl.cloneNode(true);
-  clone.style.cssText = 'background:#ffffff;border-radius:0;padding:0;width:100%;';
-  wrapper.appendChild(clone);
-  document.body.appendChild(wrapper);
-
-  // Wait a frame for layout to settle
-  await new Promise(r => requestAnimationFrame(r));
-
-  const canvas = await html2canvas(wrapper, {
-    scale:           2,            // 2× for sharpness — 1400px effective width
+  const canvas = await html2canvas(quoteEl, {
+    scale:           2,        // 2x for sharp PDF
     useCORS:         true,
     backgroundColor: '#ffffff',
     logging:         false,
-    width:           CAPTURE_WIDTH + 48, // include padding
-    height:          wrapper.scrollHeight,
-    windowWidth:     CAPTURE_WIDTH + 48,
+    width:           quoteEl.scrollWidth,
+    height:          quoteEl.scrollHeight,
+    windowWidth:     quoteEl.scrollWidth,
   });
 
-  document.body.removeChild(wrapper);
+  quoteEl.style.background = origBg;
 
   const { jsPDF } = window.jspdf;
-  const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const pdf       = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
-  const pageW  = pdf.internal.pageSize.getWidth();   // 210mm
-  const pageH  = pdf.internal.pageSize.getHeight();  // 297mm
-  const margin = 12;
-  const imgW   = pageW - margin * 2;                 // 186mm usable width
-  const imgH   = (canvas.height / canvas.width) * imgW;
+  const pageW  = pdf.internal.pageSize.getWidth();
+  const pageH  = pdf.internal.pageSize.getHeight();
+  const margin = 10;
+  const imgW   = pageW - margin * 2;
+  const imgH   = (canvas.height * imgW) / canvas.width;
 
-  const imgData = canvas.toDataURL('image/jpeg', 0.95);
+  const imgData = canvas.toDataURL('image/jpeg', 0.92);
 
+  // If content is taller than one page, split across pages
   if (imgH <= pageH - margin * 2) {
-    // Fits on one page
     pdf.addImage(imgData, 'JPEG', margin, margin, imgW, imgH);
   } else {
-    // Multi-page: slice image into page-height chunks
-    const pageImgH   = pageH - margin * 2;
-    const totalPages = Math.ceil(imgH / pageImgH);
-
-    for (let i = 0; i < totalPages; i++) {
-      if (i > 0) pdf.addPage();
-      const yPos = margin - i * pageImgH;
-      pdf.addImage(imgData, 'JPEG', margin, yPos, imgW, imgH);
-      // Clip to page — white rectangles mask overflow top/bottom
-      pdf.setFillColor(255, 255, 255);
-      if (yPos < margin) pdf.rect(0, 0, pageW, margin, 'F');
-      pdf.rect(0, pageH - margin + 1, pageW, margin + 1, 'F');
+    let yOffset = 0;
+    const pageImgH = pageH - margin * 2;
+    while (yOffset < imgH) {
+      if (yOffset > 0) pdf.addPage();
+      pdf.addImage(imgData, 'JPEG', margin, margin - yOffset, imgW, imgH);
+      yOffset += pageImgH;
     }
   }
 
