@@ -1568,12 +1568,7 @@ function cleanSpoken(text, fieldId) {
   }
 
   // Fix £ spoken as "lb" / "pounds" / "quid"
-  // Pattern: "65 pounds" → "£65", bare "pounds" → "£"
-  t = t.replace(/(\d+(?:\.\d+)?)\s+pounds?\b/gi, '£$1');
-  t = t.replace(/(\d+(?:\.\d+)?)\s+quid\b/gi, '£$1');
-  t = t.replace(/\blbs?\b/gi, '£');
-  t = t.replace(/\bpounds?\b/gi, '£');
-  t = t.replace(/\bquid\b/gi, '£');
+  t = t.replace(/\blbs?\b/gi, '£').replace(/\bpounds?\b/gi, '£').replace(/\bquid\b/gi, '£');
   return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
@@ -2006,15 +2001,8 @@ const KNOWN_ITEMS = [
 ];
 
 function parse(desc) {
-  // ── Pre-processing: normalise speech mishears before any parsing ─────
-  desc = desc
-    .replace(/(\d+(?:\.\d+)?)\s+pounds?\b/gi, '\xa3$1')  // "65 pounds" → "£65"
-    .replace(/(\d+(?:\.\d+)?)\s+quid\b/gi,    '\xa3$1')  // "65 quid" → "£65"
-    .replace(/(\d+(?:\.\d+)?)\s+lbs?\b/gi,    '\xa3$1')  // "65 lb" → "£65"
-    .replace(/\buninstall\b/gi, 'install')                  // speech mishear
-    .replace(/\blabor\b/gi,     'labour');                  // US/speech spelling
-
-  // ── Number word conversion ────────────────────────────────────────────
+  // Convert number words to digits BEFORE any pattern matching
+  // Handles mishears like "to" / "too" for "two", plus all spoken numbers
   const NUMBER_WORDS = {
     'ten':'10','nine':'9','eight':'8','seven':'7','six':'6',
     'five':'5','four':'4','three':'3','two':'2','one':'1',
@@ -2101,17 +2089,6 @@ function parse(desc) {
     if (mobM) {
       const collapsed = mobM[1].replace(/(\d)\s+(?=\d)/g, '$1').replace(/\s+/g, '');
       if (collapsed.replace(/\D/g,'').length >= 9) result.customer_phone = collapsed.replace(/\D/g,'');
-    }
-  }
-
-  // Phone digit count validation — flag if not 11 digits
-  if (result.customer_phone) {
-    const digitCount = result.customer_phone.replace(/\D/g, '').length;
-    if (digitCount !== 11) {
-      result.missing_information.push(
-        'Phone number has ' + digitCount + ' digit' + (digitCount === 1 ? '' : 's') +
-        ' — UK numbers should be 11 digits (e.g. 07700 900123). Please check and correct.'
-      );
     }
   }
 
@@ -2204,13 +2181,15 @@ function parse(desc) {
   const rateM = d.match(/[£]?(\d+)\s*(?:per\s+hour|p\/h|\/hr|an\s+hour)/i);
   if (rateM) result.hourly_rate = parseFloat(rateM[1]);
 
-  // Labour — handle "labour", "labor", £ prefix, bare number, and "pound" suffix
-  // Note: "labor"/"pounds" already normalised above so d will have "labour" and "£"
   const labourM =
-    d.match(/labo(?:u?r)\s+(?:costing|costs?|is|at|totalling|of|will be)\s*[£]?(\d+(?:\.\d+)?)/i)
-    || d.match(/labo(?:u?r)\s*[£](\d+(?:\.\d+)?)/i)
-    || d.match(/labo(?:u?r)\s+(\d+(?:\.\d+)?)(?!\s*(?:hours?|hrs?|per|p\/h))/i)
-    || d.match(/[£](\d+(?:\.\d+)?)\s*(?:for\s+)?labo(?:u?r)(?!\s*[a-z])/i);
+    // "labour costing £100" / "labour is £100" / "labour at £100"
+    d.match(/labour\s+(?:costing|costs?|is|at|totalling|of|will be)\s*[£]?(\d+(?:\.\d+)?)/i)
+    // "labour £100" — bare £ with no keyword
+    || d.match(/labour\s*[£](\d+(?:\.\d+)?)/i)
+    // "labour 100" — just a number after the word labour
+    || d.match(/labour\s+(\d+(?:\.\d+)?)(?!\s*(?:hours?|hrs?|per|p\/h))/i)
+    // "£100 for labour" / "£100 labour"
+    || d.match(/[£](\d+(?:\.\d+)?)\s*(?:for\s+)?labour(?!\s*[a-z])/i);
   if (labourM && !result.labour_hours) result.labour_fixed_total = parseFloat(labourM[1]);
 
   // Materials — known items first (longest first to avoid partial matches)
@@ -2288,11 +2267,8 @@ function parse(desc) {
       const qty      = parseInt(m[1]);
       const price    = parseFloat(m[3]);
 
-      // Skip noise: currency words, labour words, pronouns, prepositions
-      const skipWords = /^(and|the|a|an|of|to|for|with|in|on|at|by|is|it|we|us|my|our|your|labour|labor|work|job|hour|hr|day|week|cost|price|total|all|any|some|this|that|pound|pounds|quid|pence|each|per|unit|apiece|piece|lb|lbs)$/i;
-      // Also skip multi-word names that are purely currency related
-      if (/^pounds?\s+each$/i.test(rawName)) continue;
-      if (/^quid\s+each$/i.test(rawName)) continue;
+      // Skip noise: labour-related words, pronouns, prepositions
+      const skipWords = /^(and|the|a|an|of|to|for|with|in|on|at|by|is|it|we|us|my|our|your|labour|labor|work|job|hour|hr|day|week|cost|price|total|all|any|some|this|that)$/i;
       if (skipWords.test(rawName)) continue;
 
       // Skip if already captured as a known item (rough position check)
