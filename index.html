@@ -763,9 +763,13 @@ select option { background: var(--surface2); }
 
 <!-- ── Home / History screen ─────────────────────────────────── -->
 <section class="card hidden" id="step0">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
     <h2 style="margin:0">Recent Quotes</h2>
     <button class="btn btn-primary" style="width:auto;padding:8px 16px" onclick="startNewQuote()">+ New Quote</button>
+  </div>
+  <div style="margin-bottom:12px">
+    <input type="text" id="historySearch" placeholder="Search by customer name or quote number…"
+      oninput="renderHistory(this.value)" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:14px;color:var(--text);width:100%;outline:none">
   </div>
   <div id="quoteHistoryList"></div>
   <div class="btn-row" style="margin-top:16px">
@@ -2484,16 +2488,28 @@ function loadHistory() {
   catch(e) { return []; }
 }
 
-function renderHistory() {
+function renderHistory(filter) {
   const list    = document.getElementById('quoteHistoryList');
   const history = loadHistory();
   if (!list) return;
+
+  const filtered = filter
+    ? history.filter(h => h.customer.toLowerCase().includes(filter.toLowerCase())
+        || h.id.toLowerCase().includes(filter.toLowerCase()))
+    : history;
+
   if (history.length === 0) {
     list.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:24px 0">No quotes yet — tap New Quote to get started.</p>';
     return;
   }
-  list.innerHTML = history.map((h, i) => {
+  if (filtered.length === 0) {
+    list.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:16px 0">No quotes match your search.</p>';
+    return;
+  }
+  list.innerHTML = filtered.map((h) => {
     const d = new Date(h.date).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' });
+    // Use quote ID for lookup so filtered index doesn't mismatch
+    const safeId = h.id.replace(/'/g, "\\'");
     return `
       <div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)">
         <div style="flex:1;min-width:0">
@@ -2502,8 +2518,8 @@ function renderHistory() {
         </div>
         <div style="font-weight:700;color:var(--accent);white-space:nowrap">${fmt(h.total)}</div>
         <div style="display:flex;gap:6px">
-          <button onclick="viewHistoryQuote(${i})" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:12px;color:var(--text);cursor:pointer">View</button>
-          <button onclick="duplicateQuote(${i})"   style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:12px;color:var(--text);cursor:pointer">Copy</button>
+          <button onclick="viewHistoryById('${safeId}')" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:12px;color:var(--text);cursor:pointer">View</button>
+          <button onclick="duplicateById('${safeId}')"   style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:12px;color:var(--text);cursor:pointer">Copy</button>
         </div>
       </div>`;
   }).join('');
@@ -2518,13 +2534,28 @@ function viewHistoryQuote(index) {
   goStep(4);
 }
 
+function viewHistoryById(id) {
+  const h = loadHistory().find(q => q.id === id);
+  if (!h) return;
+  document.getElementById('quoteContent').innerHTML = h.html;
+  state.editSnapshot = { quoteNum: h.id };
+  goStep(4);
+}
+
 function duplicateQuote(index) {
   const history = loadHistory();
   const h = history[index];
   if (!h) return;
-  // Load the quote HTML into the viewer with a new quote number
   document.getElementById('quoteContent').innerHTML = h.html;
-  state.editSnapshot = { quoteNum: null }; // force new number
+  state.editSnapshot = { quoteNum: null };
+  goStep(4);
+}
+
+function duplicateById(id) {
+  const h = loadHistory().find(q => q.id === id);
+  if (!h) return;
+  document.getElementById('quoteContent').innerHTML = h.html;
+  state.editSnapshot = { quoteNum: null };
   goStep(4);
 }
 
@@ -2603,6 +2634,7 @@ function generateQuote() {
   }
   document.getElementById('errorMsg2').style.display = 'none';
 
+  try {
   const biz = getBiz();
   const tradeType = get('s_trade_type') || biz.trade;
 
@@ -2782,6 +2814,14 @@ function generateQuote() {
   saveToHistory(quoteNum, custName, total, document.getElementById('quoteContent').innerHTML);
 
   goStep(4);
+  } catch(err) {
+    const errEl = document.getElementById('errorMsg2');
+    if (errEl) {
+      errEl.textContent = 'Something went wrong generating the quote. Please check your details and try again.';
+      errEl.style.display = 'block';
+    }
+    console.error('generateQuote error:', err);
+  }
 }
 
 function fmt(n) {
@@ -2975,9 +3015,12 @@ async function shareQuote() {
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating PDF…'; }
 
   try {
-    // Check libraries loaded
+    // Check libraries loaded — they require internet (CDN)
     if (typeof html2canvas === 'undefined' || typeof window.jspdf === 'undefined') {
-      alert('PDF libraries are still loading — please try again in a moment.');
+      const offline = !navigator.onLine;
+      alert(offline
+        ? 'PDF generation requires an internet connection. Please connect and try again, or use the Print button.'
+        : 'PDF libraries are still loading — please wait a moment and try again.');
       return;
     }
 
@@ -2997,8 +3040,12 @@ async function shareQuote() {
         text:  quoteNum,
         files: [file],
       });
+    } else if (navigator.share) {
+      // Web Share without file support — share text summary
+      const text = document.getElementById('quoteContent').innerText.slice(0, 2000);
+      await navigator.share({ title: 'Quote from ' + bizName, text });
     } else {
-      // Fallback: download the PDF directly
+      // Desktop fallback: download the PDF
       pdf.save(fileName);
     }
   } catch(err) {
@@ -3030,6 +3077,8 @@ function duplicateCurrentQuote() {
 }
 
 function viewAllQuotes() {
+  const searchEl = document.getElementById('historySearch');
+  if (searchEl) searchEl.value = '';
   renderHistory();
   goStep(0);
 }
